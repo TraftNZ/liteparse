@@ -242,6 +242,39 @@ Install via your preferred package manager. All versions (except WASM) ship with
 | **Rust** | `cargo install liteparse` (CLI) / `cargo add liteparse` (lib) | [Rust README (crates.io)](crates/liteparse/README.md) |
 | **Browser (WASM)** | `npm i @llamaindex/liteparse-wasm` | [WASM README](packages/wasm/README.md) |
 
+### Docker from this source checkout
+
+The Dockerfile builds the native CLI with PP-OCR support and packages its matching
+PDFium library, licenses and the Bash `pdf-tool` command. Cargo caches stay in
+the builder; host binaries and model weights are not copied into the image.
+
+```bash
+docker build -t liteparse:local .
+docker run --rm --network none liteparse:local lit --help
+docker run --rm --network none -v "$PWD:/documents:ro" liteparse:local \
+  pdf-tool measure /documents/drawing.pdf 1 \
+  '{"measurement":{"points":[[0.1,0.2],[0.3,0.2]],"scale_denominator":100}}'
+```
+
+For OCR, mount your PP-OCR models and pass `--ocr-engine oar`,
+`--oar-det-model`, `--oar-rec-model` and `--oar-dict`. Applications can copy
+`/usr/local/bin/lit`, `/usr/local/lib/libpdfium.so` and
+`/usr/share/licenses/liteparse/` from this prebuilt image. Use a pinned GHCR
+image reference when publishing it for application builds.
+
+The builder cross-compiles on its host architecture for `linux/amd64` and
+`linux/arm64`, with a separate Cargo output cache for each target. Publish both
+platforms after their runtime checks pass:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg CARGO_BUILD_JOBS=12 \
+  -t ghcr.io/traftnz/liteparse:YOUR_RELEASE_TAG --push .
+```
+
+ARM64 runtime checks on an AMD64 host require ARM64 emulation. Backend builds
+should use the published multi-platform digest through `LITEPARSE_IMAGE`.
+
 ### Agent Skill
 
 You can use `liteparse` as an agent skill, downloading it with the `skills` CLI tool:
@@ -646,6 +679,20 @@ Options:
 
 Prints per-page JSON to stdout and a `COMPLEX`/`SIMPLE` verdict to stderr; exits non-zero
 when any page needs OCR, so it composes as a shell predicate.
+
+
+The fork also supports `operation: "measure"` with `measurement.mode` set to
+`distance`, `area` or `perimeter`. Points and holes use full-page fractions.
+Supply `scale_denominator` or `known_distance_mm` to obtain real dimensions;
+otherwise only paper dimensions are returned. Polygon responses include both
+area and hole-inclusive perimeter. `edge_lengths_paper_mm` lists outer edges
+in input order, including closure. Distance responses list consecutive legs.
+
+Geometry validation is strict by default. An editing application that validates
+and displays boundary warnings itself can explicitly send
+`measurement.validate_geometry:false` to obtain numbers for unfinished shapes;
+net areas below zero are returned as zero. Finite coordinates, page bounds and
+minimum point counts are still enforced.
 
 ## OCR Setup
 

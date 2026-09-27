@@ -9,9 +9,10 @@ use std::error::Error;
 use std::io;
 use std::path::Path;
 
-use lopdf::{Document as SourceDocument, Object};
+use lopdf::{Dictionary, Document as SourceDocument, Object, ObjectId};
 use pdfium::{Font, Library, PageObject, PageObjectKind};
 use serde::Serialize;
+use std::collections::HashSet;
 
 pub mod artifact;
 pub mod classify;
@@ -29,6 +30,67 @@ pub mod preview;
 pub mod raster;
 pub mod relations;
 pub mod text_capture;
+
+/// Resolve page resources in nearest-first order, including dictionaries
+/// embedded directly on ancestor `/Pages` nodes.
+fn page_resource_chain(
+    source: &SourceDocument,
+    page_id: ObjectId,
+) -> Result<Vec<&Dictionary>, Box<dyn Error>> {
+    let mut resources = Vec::new();
+    let mut visited = HashSet::new();
+    let mut current = Some(page_id);
+    while let Some(id) = current {
+        if !visited.insert(id) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "PDF page parent cycle").into());
+        }
+        let node = source.get_dictionary(id)?;
+        if let Ok(value) = node.get(b"Resources") {
+            let (_, resolved) = source.dereference(value)?;
+            resources.push(resolved.as_dict()?);
+        }
+        current = node
+            .get(b"Parent")
+            .ok()
+            .map(Object::as_reference)
+            .transpose()?;
+    }
+    Ok(resources)
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    use lopdf::dictionary;
+
+    #[test]
+    fn includes_inline_ancestor_resources_after_page_resources() {
+        let mut source = SourceDocument::new();
+        source.objects.insert(
+            (1, 0),
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Resources" => dictionary! { "XObject" => dictionary! { "IM7" => (4, 0) } },
+            }),
+        );
+        source.objects.insert(
+            (2, 0),
+            Object::Dictionary(dictionary! {
+                "Type" => "Page",
+                "Parent" => (1, 0),
+                "Resources" => (3, 0),
+            }),
+        );
+        source.objects.insert(
+            (3, 0),
+            Object::Dictionary(dictionary! { "Font" => dictionary! { "F1" => (5, 0) } }),
+        );
+        let chain = page_resource_chain(&source, (2, 0)).unwrap();
+        assert_eq!(chain.len(), 2);
+        assert!(chain[0].get(b"Font").is_ok());
+        assert!(chain[1].get(b"XObject").is_ok());
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct PageProbe {
@@ -300,19 +362,8 @@ fn inspect_resources(
     streams: &mut Vec<StreamProbe>,
     resources: &mut Vec<ResourceProbe>,
 ) -> Result<(), Box<dyn Error>> {
-    let (direct, inherited) = source.get_page_resources(page_id)?;
-    if let Some(dict) = direct {
+    for dict in page_resource_chain(source, page_id)? {
         inspect_resource_dictionary(source, dict, "page", &mut Vec::new(), streams, resources)?;
-    }
-    for id in inherited {
-        inspect_resource_dictionary(
-            source,
-            source.get_object(id)?.as_dict()?,
-            "page",
-            &mut Vec::new(),
-            streams,
-            resources,
-        )?;
     }
     Ok(())
 }

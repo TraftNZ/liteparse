@@ -20,7 +20,7 @@ pub enum MeasurementMode {
 
 /// Coordinates are full-page, top-left fractions. Scale is explicit: without
 /// calibration or a supplied denominator, only paper measurements are returned.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeasurementOptions {
     pub mode: MeasurementMode,
@@ -30,6 +30,24 @@ pub struct MeasurementOptions {
     pub scale_denominator: Option<f64>,
     pub known_distance_mm: Option<f64>,
     pub snap_distance_mm: Option<f64>,
+    /// Editable UI boundaries are validated by their caller and may still need
+    /// numeric measurements while invalid. Standalone requests remain strict.
+    pub validate_geometry: bool,
+}
+
+impl Default for MeasurementOptions {
+    fn default() -> Self {
+        Self {
+            mode: MeasurementMode::default(),
+            points: Vec::new(),
+            holes: Vec::new(),
+            polyline_index: None,
+            scale_denominator: None,
+            known_distance_mm: None,
+            snap_distance_mm: None,
+            validate_geometry: true,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +67,7 @@ pub struct Measurement {
     pub points_pts: Vec<[f64; 2]>,
     pub holes_pts: Vec<Vec<[f64; 2]>>,
     pub snaps: Vec<Snap>,
+    pub edge_lengths_paper_mm: Vec<f64>,
     pub paper_length_mm: Option<f64>,
     pub paper_area_mm2: Option<f64>,
     pub scale_denominator: Option<f64>,
@@ -284,45 +303,55 @@ pub fn measure_page(
             }
         }
     }
+    let mut edge_lengths_paper_mm = Vec::new();
     let (paper_length_mm, paper_area_mm2) = if options.mode == MeasurementMode::Distance {
-        let mut length = points
-            .windows(2)
-            .map(|pair| distance(pair[0], pair[1]))
-            .sum::<f64>();
+        edge_lengths_paper_mm.extend(
+            points
+                .windows(2)
+                .map(|pair| distance(pair[0], pair[1]) * MILLIMETERS_PER_POINT),
+        );
         if source_closed {
-            length += distance(points[points.len() - 1], points[0]);
+            edge_lengths_paper_mm
+                .push(distance(points[points.len() - 1], points[0]) * MILLIMETERS_PER_POINT);
         }
-        (Some(length * MILLIMETERS_PER_POINT), None)
+        (Some(edge_lengths_paper_mm.iter().sum()), None)
     } else {
         let outer = ring(&points);
-        validate_ring(outer)?;
-        for (index, hole) in holes.iter().enumerate() {
-            let hole = ring(hole);
-            validate_ring(hole)?;
-            if !inside(outer, hole[0]) || boundaries_intersect(outer, hole) {
-                return Err(invalid("holes must lie strictly inside the outer boundary"));
-            }
-            for other in &holes[..index] {
-                let other = ring(other);
-                if boundaries_intersect(other, hole)
-                    || inside(other, hole[0])
-                    || inside(hole, other[0])
-                {
-                    return Err(invalid("holes cannot overlap or contain each other"));
+        if points.len() < 3 || holes.iter().any(|hole| hole.len() < 3) {
+            return Err(invalid("a boundary needs at least three points"));
+        }
+        if options.validate_geometry {
+            validate_ring(outer)?;
+            for (index, hole) in holes.iter().enumerate() {
+                let hole = ring(hole);
+                validate_ring(hole)?;
+                if !inside(outer, hole[0]) || boundaries_intersect(outer, hole) {
+                    return Err(invalid("holes must lie strictly inside the outer boundary"));
+                }
+                for other in &holes[..index] {
+                    let other = ring(other);
+                    if boundaries_intersect(other, hole)
+                        || inside(other, hole[0])
+                        || inside(hole, other[0])
+                    {
+                        return Err(invalid("holes cannot overlap or contain each other"));
+                    }
                 }
             }
         }
-        if options.mode == MeasurementMode::Area {
-            let value = area(outer) - holes.iter().map(|hole| area(ring(hole))).sum::<f64>();
-            (None, Some(value * MILLIMETERS_PER_POINT.powi(2)))
-        } else {
-            let length = edges(outer).map(|(a, b)| distance(a, b)).sum::<f64>()
-                + holes
-                    .iter()
-                    .map(|hole| edges(ring(hole)).map(|(a, b)| distance(a, b)).sum::<f64>())
-                    .sum::<f64>();
-            (Some(length * MILLIMETERS_PER_POINT), None)
-        }
+        edge_lengths_paper_mm
+            .extend(edges(&points).map(|(a, b)| distance(a, b) * MILLIMETERS_PER_POINT));
+        let length = edge_lengths_paper_mm.iter().sum::<f64>()
+            + holes
+                .iter()
+                .map(|hole| {
+                    edges(ring(hole))
+                        .map(|(a, b)| distance(a, b) * MILLIMETERS_PER_POINT)
+                        .sum::<f64>()
+                })
+                .sum::<f64>();
+        let value = (area(outer) - holes.iter().map(|hole| area(ring(hole))).sum::<f64>()).max(0.0);
+        (Some(length), Some(value * MILLIMETERS_PER_POINT.powi(2)))
     };
     let scale_denominator = if let Some(known) = options.known_distance_mm {
         let length = paper_length_mm.unwrap_or_default();
@@ -361,6 +390,7 @@ pub fn measure_page(
         points_pts: points,
         holes_pts: holes,
         snaps,
+        edge_lengths_paper_mm,
         paper_length_mm,
         paper_area_mm2,
         scale_denominator,

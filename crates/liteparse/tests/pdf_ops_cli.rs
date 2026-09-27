@@ -84,6 +84,7 @@ fn measures_real_pdf_points_and_calibration_without_assumed_scale() {
         "measurement":{"points":[[0.1,0.8],[0.3,0.8]]}});
     let measured = invoke(request.clone());
     assert_close(&measured["measurement"]["paper_length_mm"], 50.8);
+    assert_close(&measured["measurement"]["edge_lengths_paper_mm"][0], 50.8);
     assert!(measured["measurement"]["real_length_mm"].is_null());
     assert_eq!(measured["measurement"]["backend"], "pdfium");
     assert_eq!(measured["measurement"]["extractor_generation"], 9);
@@ -104,9 +105,18 @@ fn measures_area_perimeter_holes_and_complete_source_polyline() {
     let measured = invoke(request.clone());
     assert_close(&measured["measurement"]["paper_area_mm2"], 1935.48);
     assert_close(&measured["measurement"]["real_area_mm2"], 19_354_800.0);
+    assert_close(&measured["measurement"]["paper_length_mm"], 304.8);
+    let edges = measured["measurement"]["edge_lengths_paper_mm"]
+        .as_array()
+        .unwrap();
+    assert_eq!(edges.len(), 4);
+    for edge in edges {
+        assert_close(edge, 50.8);
+    }
     request["measurement"]["mode"] = json!("perimeter");
     let measured = invoke(request);
     assert_close(&measured["measurement"]["paper_length_mm"], 304.8);
+    assert_close(&measured["measurement"]["paper_area_mm2"], 1935.48);
     let geometry =
         invoke(json!({"version":1,"operation":"geometry","pdf_path":path,"page_number":1}));
     let index = geometry[0]["polylines"]
@@ -1050,4 +1060,34 @@ fn geometry_suppresses_consecutive_glyphs_and_preserves_repeated_words() {
     );
     assert_eq!(spans[1], spans[2]);
     assert_eq!(spans[2], spans[3]);
+}
+
+#[test]
+fn editable_measurements_preserve_ui_edges_and_invalid_boundary_numbers() {
+    let (directory, path) = measurement_fixture();
+    let measured = invoke(json!({"version":1,"operation":"measure","pdf_path":path,
+        "page_number":1,"measurement":{"mode":"area","validate_geometry":false,
+        "points":[[0.1,0.2],[0.3,0.2],[0.3,0.6],[0.1,0.6],[0.1,0.2]],
+        "scale_denominator":100}}));
+    assert_eq!(
+        measured["measurement"]["edge_lengths_paper_mm"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_close(&measured["measurement"]["edge_lengths_paper_mm"][4], 0.0);
+    assert_close(&measured["measurement"]["paper_length_mm"], 203.2);
+    assert_close(&measured["measurement"]["paper_area_mm2"], 2580.64);
+    let measured = invoke(json!({"version":1,"operation":"measure","pdf_path":path,
+        "page_number":1,"measurement":{"mode":"perimeter","validate_geometry":false,
+        "points":[[0.1,0.2],[0.3,0.6],[0.3,0.2],[0.1,0.6]],"scale_denominator":100}}));
+    assert_close(&measured["measurement"]["paper_area_mm2"], 0.0);
+    assert!(measured["measurement"]["paper_length_mm"].as_f64().unwrap() > 0.0);
+    let measured = invoke(json!({"version":1,"operation":"measure","pdf_path":path,
+        "page_number":1,"measurement":{"mode":"area","validate_geometry":false,
+        "points":[[0.1,0.2],[0.3,0.2],[0.3,0.6],[0.1,0.6]],
+        "holes":[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0]]],"scale_denominator":100}}));
+    assert_close(&measured["measurement"]["paper_area_mm2"], 0.0);
+    std::fs::remove_dir_all(directory).unwrap();
 }

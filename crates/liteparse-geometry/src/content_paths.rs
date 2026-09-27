@@ -1491,14 +1491,7 @@ pub fn capture_loaded_page_content(
         .get_pages()
         .get(&page_number)
         .ok_or_else(|| invalid("source page unavailable"))?;
-    let (direct, inherited) = source.get_page_resources(page_id)?;
-    let mut resources = Vec::new();
-    if let Some(direct) = direct {
-        resources.push(direct);
-    }
-    for id in inherited {
-        resources.push(source.get_object(id)?.as_dict()?);
-    }
+    let resources = crate::page_resource_chain(source, page_id)?;
     let viewport = page.viewport_transform(&view_box);
     let (width_pts, height_pts) = page.viewport_size(&view_box);
     let mut reader = StreamReader {

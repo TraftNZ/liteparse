@@ -867,6 +867,77 @@ impl NativeGlyph {
     }
 }
 
+struct NativeShowAlignment {
+    object: usize,
+    glyphs: Vec<NativeGlyph>,
+}
+
+/// PDFium may combine consecutive source text shows into one text object.
+/// Accept that grouping only when every encoded source code matches the
+/// corresponding native glyph in paint order. Native objects after the last
+/// source show remain independent text, such as text inside a form object.
+fn align_coalesced_text_shows(
+    content: &SourcePageContent,
+    order: &ObjectOrder,
+    native_by_object: &HashMap<usize, Vec<NativeGlyph>>,
+) -> Result<Vec<NativeShowAlignment>, std::io::Error> {
+    let mut aligned = Vec::new();
+    let mut object_index = 0;
+    let mut glyph_offset = 0;
+    for (show_index, paint) in content.text_paints.iter().filter(|paint| paint.has_text).enumerate() {
+        while object_index < order.text.len()
+            && glyph_offset == native_by_object.get(&order.text[object_index]).map_or(0, Vec::len)
+        {
+            object_index += 1;
+            glyph_offset = 0;
+        }
+        let object = *order
+            .text
+            .get(object_index)
+            .ok_or_else(|| text_error("source text show has no native glyph object"))?;
+        let native = native_by_object
+            .get(&object)
+            .ok_or_else(|| text_error("native text object has no glyphs"))?;
+        let encoding = order
+            .fonts
+            .get(&object)
+            .ok_or_else(|| text_error("native text object has no font"))?
+            .encoding()
+            .unwrap_or_default();
+        let mut codes = Vec::new();
+        for element in &paint.elements {
+            if let SourceTextElement::Bytes(bytes) = element {
+                let mut offset = 0;
+                while offset < bytes.len() {
+                    let (code, length) =
+                        encoded_character(&bytes[offset..], paint, &encoding, &native[glyph_offset..])?;
+                    codes.push((code, length));
+                    offset += length;
+                }
+            }
+        }
+        let native_remaining = &native[glyph_offset..];
+        let mut consumed = 0;
+        for (source_index, code) in codes.iter().enumerate() {
+            if native_remaining.get(consumed).is_some_and(|glyph| glyph.code == code.0) {
+                consumed += 1;
+            } else if !paint.space_codes.contains(code) {
+                return Err(text_error(format!(
+                    "coalesced native text differs at show {show_index}, object {object}, glyph offset {glyph_offset}, source code {source_index}: source {code:?}, native {:?}",
+                    native_remaining.get(consumed).map(|glyph| glyph.code)
+                )));
+            }
+        }
+        let end = glyph_offset + consumed;
+        aligned.push(NativeShowAlignment {
+            object,
+            glyphs: native[glyph_offset..end].to_vec(),
+        });
+        glyph_offset = end;
+    }
+    Ok(aligned)
+}
+
 fn text_error(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
 }
@@ -937,6 +1008,8 @@ struct SourceGlyphRecovery {
     identical_paints: HashMap<usize, usize>,
     omitted: Vec<TextToken>,
     replacements: HashMap<usize, TextToken>,
+    paint_objects: Vec<usize>,
+    coalesced: bool,
 }
 
 fn source_text_token(
@@ -1052,6 +1125,14 @@ fn source_glyph_frames(
     let mut painted_glyphs: HashMap<PaintReplayKey, Vec<(usize, bool)>> = HashMap::new();
     let mut cursors = HashMap::new();
     let mut objects = order.text.iter();
+    let coalesced = order.text.len() != content.text_line_corrections.len();
+    let alignment = if coalesced {
+        Some(align_coalesced_text_shows(content, order, &native_by_object)?)
+    } else {
+        None
+    };
+    let mut paint_objects = Vec::new();
+    let mut paint_index = 0;
     for paint in &content.text_paints {
         let mut matrix = if paint.show == 0 {
             paint.line
@@ -1060,7 +1141,25 @@ fn source_glyph_frames(
                 .get(&(paint.run, paint.show))
                 .ok_or_else(|| text_error("source text cursor checkpoint is missing"))?
         };
-        let object = paint.has_text.then(|| objects.next()).flatten();
+        let assigned = if paint.has_text {
+            let result = alignment.as_ref().and_then(|shows| shows.get(paint_index));
+            paint_index += 1;
+            result
+        } else {
+            None
+        };
+        let object = if paint.has_text {
+            if let Some(show) = assigned {
+                Some(&show.object)
+            } else {
+                objects.next()
+            }
+        } else {
+            None
+        };
+        if let Some(object) = object {
+            paint_objects.push(*object);
+        }
         let font = object
             .map(|index| {
                 order
@@ -1069,9 +1168,10 @@ fn source_glyph_frames(
                     .ok_or_else(|| text_error("native text object has no font"))
             })
             .transpose()?;
-        let native = object
-            .and_then(|index| native_by_object.get(index))
-            .map_or(&[][..], Vec::as_slice);
+        let native = assigned.map_or_else(
+            || object.and_then(|index| native_by_object.get(index)).map_or(&[][..], Vec::as_slice),
+            |show| show.glyphs.as_slice(),
+        );
         let encoding = font.and_then(Font::encoding).unwrap_or_default();
         let vertical = paint.vertical;
         let mut source_codes = Vec::new();
@@ -1334,7 +1434,7 @@ fn source_glyph_frames(
         }
         cursors.insert((paint.run, paint.show + 1), matrix);
     }
-    if objects.next().is_some() {
+    if !coalesced && objects.next().is_some() {
         return Err(text_error("native text objects remain after source text replay").into());
     }
     let mut identical_paints = HashMap::new();
@@ -1353,6 +1453,8 @@ fn source_glyph_frames(
         identical_paints,
         omitted,
         replacements,
+        paint_objects,
+        coalesced,
     })
 }
 
@@ -1380,41 +1482,23 @@ pub fn restore_source_text_positions(
             collect_object_order(object, 0, &mut next, &mut order);
         }
     }
-    if order.text.len() != content.text_line_corrections.len() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "source/native text-object alignment differs: {} source shows, {} native objects",
-                content.text_line_corrections.len(),
-                order.text.len(),
-            ),
-        )
-        .into());
-    }
     let SourceGlyphRecovery {
         native: recovered,
         native_spaces,
         identical_paints,
         omitted,
         replacements,
+        paint_objects,
+        coalesced,
     } = source_glyph_frames(page, text_page, content, &order, characters)?;
-    let source_names: HashMap<_, _> = order
-        .text
-        .iter()
-        .copied()
-        .zip(
-            content
-                .text_paints
-                .iter()
-                .filter(|paint| paint.has_text)
-                .map(|paint| paint.font_name.as_deref()),
-        )
-        .collect();
-    let corrections: HashMap<_, _> = order
-        .text
-        .into_iter()
-        .zip(content.text_line_corrections.iter().copied())
-        .collect();
+    let mut source_names = HashMap::new();
+    let mut corrections = HashMap::new();
+    for ((object, paint), correction) in paint_objects.iter().copied().zip(
+        content.text_paints.iter().filter(|paint| paint.has_text)
+    ).zip(content.text_line_corrections.iter().copied()) {
+        source_names.entry(object).or_insert(paint.font_name.as_deref());
+        corrections.entry(object).or_insert(correction);
+    }
     // Kerning can put a trailing space inside the next token's bounds. Its
     // encoded suffix owns the glyph; recovering it again as a prefix would
     // duplicate both the text and its painted extent.
@@ -1459,12 +1543,10 @@ pub fn restore_source_text_positions(
             .filter_map(|frame| frame.native_index)
             .filter(|index| !native_spaces.contains(index))
             .max();
-        let Some(delta) = token.source_order.and_then(|index| corrections.get(&index)) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "native text token has no source paint operation",
-            )
-            .into());
+        let delta = match token.source_order.and_then(|index| corrections.get(&index)) {
+            Some(delta) => *delta,
+            None if coalesced => [0.0, 0.0],
+            None => return Err(text_error("native text token has no source paint operation").into()),
         };
         if let Some(Some(name)) = token
             .source_order
@@ -1768,6 +1850,42 @@ pub fn group_text_tokens(tokens: &[TextToken]) -> Vec<TextSpan> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_source_text_alignment() {
+        let Ok(path) = std::env::var("LITEPARSE_ALIGNMENT_SOURCE") else {
+            return;
+        };
+        let page_number: u32 = std::env::var("LITEPARSE_ALIGNMENT_PAGE")
+            .unwrap_or_else(|_| "1".to_owned())
+            .parse()
+            .unwrap();
+        let library = pdfium::Library::try_init().unwrap();
+        let document = library.load_document(&path, None).unwrap();
+        let page = document.page(page_number as i32 - 1).unwrap();
+        let source = lopdf::Document::load(&path).unwrap();
+        let content = crate::content_paths::capture_loaded_page_content(&source, &page, page_number).unwrap();
+        let text_page = page.text().unwrap();
+        let mut order = ObjectOrder::default();
+        let mut next = 0;
+        for index in 0..page.object_count() {
+            if let Some(object) = page.object(index) {
+                collect_object_order(object, 0, &mut next, &mut order);
+            }
+        }
+        let mut native_by_object: HashMap<usize, Vec<NativeGlyph>> = HashMap::new();
+        for (index, glyph) in text_page.chars().enumerate() {
+            if glyph.is_generated() { continue; }
+            let Some(object) = glyph.text_object().and_then(|object| order.all.get(&(object as usize))) else { continue; };
+            let (x, y) = glyph.origin().unwrap();
+            native_by_object.entry(*object).or_default().push(NativeGlyph {
+                index, code: glyph.char_code(), unicode: glyph.unicode(), start: [x, y]
+            });
+        }
+        if order.text.len() != content.text_line_corrections.len() {
+            align_coalesced_text_shows(&content, &order, &native_by_object).unwrap();
+        }
+    }
 
     fn token(text: &str, x: f64, y: f64) -> TextToken {
         TextToken {

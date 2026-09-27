@@ -232,6 +232,31 @@ impl TextChar<'_> {
         unsafe { ffi!(FPDFText_GetUnicode(self.text_page.handle, self.index)) }
     }
 
+    /// Decode a scalar when PDFium exposes a supplementary character as
+    /// two UTF-16 entries. The continuation entry has no separate scalar.
+    pub fn unicode_scalar(&self) -> Option<char> {
+        const HIGH_SURROGATE: std::ops::RangeInclusive<u32> = 0xd800..=0xdbff;
+        let unicode = self.unicode();
+        if !HIGH_SURROGATE.contains(&unicode) {
+            return char::from_u32(unicode);
+        }
+        let next = self.text_page.char_at(self.index.checked_add(1)?)?;
+        if self.text_object().is_none()
+            || self.text_object() != next.text_object()
+            || self.char_code() != next.char_code()
+            || self.origin() != next.origin()
+        {
+            return None;
+        }
+        let units = [
+            u16::try_from(unicode).ok()?,
+            u16::try_from(next.unicode()).ok()?,
+        ];
+        let mut decoded = char::decode_utf16(units);
+        let scalar = decoded.next()?.ok()?;
+        decoded.next().is_none().then_some(scalar)
+    }
+
     /// Raw character code from the PDF content stream (not Unicode).
     /// Only meaningful for non-generated characters.
     pub fn char_code(&self) -> u32 {

@@ -1,0 +1,28 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "Ac�ve",
+        "x0": 97.98400115966797,
+        "y0": 20,
+        "x1": 108.30400085449219,
+        "y1": 50.10800552368164,
+        "fontSize": 12,
+        "fontName": "CBTKZQ+Calibri",
+        "rotation": 90
+      }
+    ],
+    "source": "vector"
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "A",
+        "x0": 55,
+        "y0": 37.600006103515625,
+        "x1": 75,
+        "y1": 57.600006103515625,
+        "fontSize": 20,
+        "fontName": "Helvetica",
+        "rotation": 90
+      },
+      {
+        "text": "B",
+        "x0": 55,
+        "y0": 57.600006103515625,
+        "x1": 75,
+        "y1": 81.60000610351562,
+        "fontSize": 20,
+        "fontName": "Helvetica",
+        "rotation": 90
+      },
+      {
+        "text": "AB",
+        "x0": 60,
+        "y0": 49,
+        "x1": 80,
+        "y1": 69,
+        "fontSize": 20,
+        "fontName": "Helvetica"
+      }
+    ],
+    "source": "vector"
+  }
+]

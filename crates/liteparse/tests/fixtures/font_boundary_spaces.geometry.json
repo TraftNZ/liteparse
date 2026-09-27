@@ -1,0 +1,45 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 100,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "X",
+        "x0": 10,
+        "y0": 9.25,
+        "x1": 22.670000076293945,
+        "y1": 23.170000076293945,
+        "fontSize": 10,
+        "fontName": "Helvetica"
+      },
+      {
+        "text": "Address.",
+        "x0": 33.39419937133789,
+        "y0": 10.680000305175781,
+        "x1": 87.39419555664062,
+        "y1": 23.170000076293945,
+        "fontSize": 10,
+        "fontName": "Courier"
+      },
+      {
+        "text": "Summary ............ 1",
+        "x0": 10,
+        "y0": 40.68000030517578,
+        "x1": 152,
+        "y1": 53.16999816894531,
+        "fontSize": 10,
+        "fontName": "Courier"
+      }
+    ],
+    "source": "vector"
+  }
+]

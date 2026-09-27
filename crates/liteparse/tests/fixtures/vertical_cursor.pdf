@@ -1,0 +1,51 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /FV 4 0 R /FH 5 0 R >> >> /Contents 8 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /Helvetica /Encoding /Identity-V /DescendantFonts [6 0 R] /ToUnicode 9 0 R >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /Helvetica /Encoding /Identity-H /DescendantFonts [6 0 R] /ToUnicode 9 0 R >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Helvetica /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 7 0 R /CIDToGIDMap /Identity /DW 500 /DW2 [880 -1000] /W2 [1 [-1000 250 880 -1200 250 880]] >>
+endobj
+7 0 obj
+<< /Type /FontDescriptor /FontName /Helvetica /Flags 32 /FontBBox [0 -250 1000 750] /Ascent 750 /Descent -250 /CapHeight 750 /ItalicAngle 0 /StemV 80 >>
+endobj
+8 0 obj
+<< /Length 71 >>
+stream
+BT /FV 20 Tf 1 0 0 1 60 180 Tm <00010002> Tj /FH 20 Tf <00010002> Tj ET
+endstream
+endobj
+9 0 obj
+<< /Length 273 >>
+stream
+/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /CursorUnicode def /CMapType 2 def 1 begincodespacerange <0000> <ffff> endcodespacerange 2 beginbfchar <0001> <0041> <0002> <0042> endbfchar endcmap CMapName currentdict /CMap defineresource pop end end
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000000385 00000 n 
+0000000519 00000 n 
+0000000778 00000 n 
+0000000946 00000 n 
+0000001067 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1391
+%%EOF

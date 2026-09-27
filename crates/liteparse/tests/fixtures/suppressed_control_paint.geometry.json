@@ -1,0 +1,37 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 842,
+    "heightPts": 595.219970703125,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "���",
+        "x0": 50,
+        "y0": 94.86156463623047,
+        "x1": 58.27705383300781,
+        "y1": 101.48223876953125,
+        "fontSize": 6.483062744140625,
+        "fontName": "VIRIBR+Arial"
+      },
+      {
+        "text": "������������",
+        "x0": 585.3271484375,
+        "y0": 267.83636474609375,
+        "x1": 619.8428344726562,
+        "y1": 297.1697082519531,
+        "fontSize": 6.4813385009765625,
+        "fontName": "VIRIBR+Arial",
+        "rotation": -38.501167903042045
+      }
+    ],
+    "source": "vector"
+  }
+]

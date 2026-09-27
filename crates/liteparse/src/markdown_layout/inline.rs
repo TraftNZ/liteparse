@@ -21,10 +21,6 @@ impl SpanStyle {
             strike: is_strike_item(item),
         }
     }
-
-    pub(super) fn is_plain(self) -> bool {
-        !self.bold && !self.italic && !self.mono && !self.strike
-    }
 }
 
 /// Escape characters that would otherwise be interpreted as markdown emphasis.

@@ -56,6 +56,7 @@ fn is_rtl_chars(chars: impl Iterator<Item = char>) -> bool {
 }
 
 /// Base direction of a line of text. See [`is_rtl_chars`].
+#[cfg(test)]
 pub(crate) fn is_rtl_text(s: &str) -> bool {
     !s.is_ascii() && is_rtl_chars(s.chars())
 }

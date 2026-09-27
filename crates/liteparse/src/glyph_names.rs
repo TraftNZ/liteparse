@@ -71,10 +71,9 @@ pub(crate) fn resolve_glyph_name_codepoint(name: &str) -> Option<u32> {
 fn algorithmic_codepoint(base: &str) -> Option<u32> {
     let hex = if let Some(hex) = base.strip_prefix("uni") {
         (hex.len() == 4).then_some(hex)?
-    } else if let Some(hex) = base.strip_prefix('u') {
-        (4..=6).contains(&hex.len()).then_some(hex)?
     } else {
-        return None;
+        let hex = base.strip_prefix('u')?;
+        (4..=6).contains(&hex.len()).then_some(hex)?
     };
     if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;

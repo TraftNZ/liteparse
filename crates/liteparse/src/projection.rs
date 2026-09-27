@@ -2247,7 +2247,7 @@ fn project_to_grid(
                             char_len(&raw_lines[line_idx]),
                             meta[line_idx][box_idx].should_space
                         );
-                        eprintln!("[debug]   raw_line so far: '{}'", &raw_lines[line_idx]);
+                        eprintln!("[debug]   raw_line so far: '{}'", raw_lines[line_idx]);
                     }
 
                     trim_end_in_place(&mut raw_lines[line_idx]);
@@ -3260,8 +3260,8 @@ fn xy_find_best_cut(
         let b1_f = ((c1 - origin) / XY_BUCKET_PT).ceil();
         let b0 = b0_f.max(0.0) as usize;
         let b1 = (b1_f.max(b0_f + 1.0) as usize).min(n_buckets);
-        for b in b0..b1 {
-            density[b] += weight;
+        for bucket in density.iter_mut().take(b1).skip(b0) {
+            *bucket += weight;
         }
     }
 
@@ -3287,8 +3287,8 @@ fn xy_find_best_cut(
         let b1_f = ((c1 - origin) / XY_BUCKET_PT).ceil();
         let b0 = b0_f.max(0.0) as usize;
         let b1 = (b1_f.max(b0_f + 1.0) as usize).min(n_buckets);
-        for b in b0..b1 {
-            density[b] += weight;
+        for bucket in density.iter_mut().take(b1).skip(b0) {
+            *bucket += weight;
         }
     }
 
@@ -3789,7 +3789,7 @@ fn xy_find_column_cut(
     // otherwise (top-3 are comparable → tabular) bail.
     if peaks.len() > 2 {
         let mut by_count = peaks.clone();
-        by_count.sort_by(|a, b| b.1.cmp(&a.1));
+        by_count.sort_by_key(|a| std::cmp::Reverse(a.1));
         let third = by_count[2].1 as f32;
         let second = by_count[1].1 as f32;
         let largest = by_count[0].1 as f32;
@@ -4310,7 +4310,7 @@ fn xy_cut_rec(
                 it.width,
                 it.y,
                 it.height,
-                &it.text.chars().take(80).collect::<String>()
+                it.text.chars().take(80).collect::<String>()
             );
         }
     }

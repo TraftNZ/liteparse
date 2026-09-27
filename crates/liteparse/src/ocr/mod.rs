@@ -25,6 +25,8 @@ pub struct OcrResult {
     pub polygon: Option<[[f32; 2]; 4]>,
 }
 
+pub type OcrRecognitionResult = Result<Vec<OcrResult>, Box<dyn std::error::Error + Send + Sync>>;
+
 pub struct OcrOptions {
     pub language: String,
     /// Resolution (pixels per inch) the page image was rendered at. OCR engines
@@ -52,13 +54,7 @@ pub trait OcrEngine: Send + Sync {
         width: u32,
         height: u32,
         options: &'b OcrOptions,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<OcrResult>, Box<dyn std::error::Error + Send + Sync>>>
-                + Send
-                + '_,
-        >,
-    >;
+    ) -> Pin<Box<dyn Future<Output = OcrRecognitionResult> + Send + '_>>;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -75,12 +71,7 @@ pub trait OcrEngine: Send + Sync {
         width: u32,
         height: u32,
         options: &'b OcrOptions,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<OcrResult>, Box<dyn std::error::Error + Send + Sync>>>
-                + '_,
-        >,
-    >;
+    ) -> Pin<Box<dyn Future<Output = OcrRecognitionResult> + '_>>;
 }
 
 #[cfg(test)]

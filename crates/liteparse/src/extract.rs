@@ -281,10 +281,12 @@ fn extract_single_page(
     let extracted_refs = extract_page_image_refs(&page, page_number, output_options.extract_images);
     let mut image_refs = extracted_refs.refs;
     image_error_count += extracted_refs.error_count;
-    let pdf_annotations = (output_options.extract_annotations
-        || output_options.extract_structure_tree)
-        .then(|| page.annotations(&view_box))
-        .unwrap_or_default();
+    let pdf_annotations =
+        if output_options.extract_annotations || output_options.extract_structure_tree {
+            page.annotations(&view_box)
+        } else {
+            Vec::new()
+        };
     let annotations = output_options
         .extract_annotations
         .then(|| pdf_annotations.iter().map(document_annotation).collect());
@@ -1446,7 +1448,7 @@ fn rectf_to_rect(r: &RectF) -> Rect {
 /// Fold typographic punctuation to its ASCII equivalent so extracted text
 /// matches plain-ASCII transcriptions: curly quotes → `'`/`"`, the dash family
 /// (en/em/figure/non-breaking/minus) → `-`. Applied to every decoded character
-/// at extraction time so all output formats are consistent.
+/// for reading items. Painted geometry retains typographic characters.
 fn normalize_punct(c: char) -> char {
     match c {
         '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{2032}' => '\'',
@@ -1455,6 +1457,67 @@ fn normalize_punct(c: char) -> char {
         | '\u{2212}' => '-',
         _ => c,
     }
+}
+
+/// Recover glyph characters with the same decoder used by painted text items.
+/// Geometry uses this map to associate recovered characters with native indices.
+pub fn recover_page_glyph_characters(
+    text_page: &TextPage<'_, '_>,
+) -> std::collections::HashMap<usize, char> {
+    let count = text_page.char_count();
+    let garbage_fonts = detect_garbage_unicode_fonts(text_page, count);
+    let mut decoder = GlyphDecoder::new(false, garbage_fonts, None);
+    text_page
+        .chars()
+        .enumerate()
+        .filter_map(|(index, ch)| {
+            let cv = CharView { ch: &ch, rec: None };
+            decoded_glyph(&cv, &mut decoder, TextExtractionMode::PaintedObjects)
+                .map(|(character, _, _)| (index, character))
+        })
+        .collect()
+}
+
+fn decoded_glyph<'a>(
+    cv: &CharView<'_, '_>,
+    decoder: &'a mut GlyphDecoder<'_>,
+    mode: TextExtractionMode,
+) -> Option<(char, &'a str, bool)> {
+    let unicode = cv.unicode();
+    const UTF16_SURROGATES: std::ops::RangeInclusive<u32> = 0xd800..=0xdfff;
+    if UTF16_SURROGATES.contains(&unicode) {
+        return cv.ch.unicode_scalar().map(|scalar| (scalar, "", false));
+    }
+    let decoded = if cv.is_generated() {
+        None
+    } else {
+        decoder.decode(cv, unicode)
+    };
+    let recovered = decoded.is_some();
+    let (character, tail) = if let Some(text) = decoded {
+        let mut chars = text.chars();
+        (chars.next()?, chars.as_str())
+    } else {
+        match unicode {
+            _ if mode == TextExtractionMode::PaintedObjects
+                && !cv.is_generated()
+                && cv.has_unicode_map_error() =>
+            {
+                ('\u{fffd}', "")
+            }
+            0 | 0xFFFE | 0xFFFF => return None,
+            0x01 => (' ', ""),
+            0x02 => ('-', ""),
+            0x1A => ('f', "f"),
+            0x1B => ('f', "t"),
+            0x1C => ('f', "i"),
+            0x1D => ('T', "h"),
+            0x1E => ('f', "fi"),
+            0x1F => ('f', "l"),
+            _ => (char::from_u32(unicode)?, ""),
+        }
+    };
+    Some((character, tail, recovered))
 }
 
 /// Character-level text extraction.
@@ -1469,13 +1532,58 @@ fn normalize_punct(c: char) -> char {
 /// - Line changes (large vertical shift)
 /// - Column breaks (large horizontal gap)
 /// - Explicit newline characters
-fn extract_page_text_items(
+pub fn extract_page_text_items(
     page: &Page,
     text_page: &TextPage,
     view_box: &RectF,
     glyph_resolver: Option<&dyn crate::GlyphResolver>,
     emit_word_boxes: bool,
     extract_text_metadata: bool,
+) -> Result<Vec<TextItem>, LiteParseError> {
+    extract_page_text_items_with_mode(
+        page,
+        text_page,
+        view_box,
+        glyph_resolver,
+        emit_word_boxes,
+        extract_text_metadata,
+        TextExtractionMode::ReadingItems,
+    )
+}
+
+/// Capture text object boundaries and repeated painted instances for geometry.
+/// Unicode/glyph recovery uses the same implementation as document parsing.
+pub fn extract_page_text_objects(
+    page: &Page,
+    text_page: &TextPage,
+    view_box: &RectF,
+    glyph_resolver: Option<&dyn crate::GlyphResolver>,
+) -> Result<Vec<TextItem>, LiteParseError> {
+    extract_page_text_items_with_mode(
+        page,
+        text_page,
+        view_box,
+        glyph_resolver,
+        false,
+        true,
+        TextExtractionMode::PaintedObjects,
+    )
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum TextExtractionMode {
+    ReadingItems,
+    PaintedObjects,
+}
+
+fn extract_page_text_items_with_mode(
+    page: &Page,
+    text_page: &TextPage,
+    view_box: &RectF,
+    glyph_resolver: Option<&dyn crate::GlyphResolver>,
+    emit_word_boxes: bool,
+    extract_text_metadata: bool,
+    mode: TextExtractionMode,
 ) -> Result<Vec<TextItem>, LiteParseError> {
     let char_count = text_page.char_count();
     if char_count <= 0 {
@@ -1517,6 +1625,7 @@ fn extract_page_text_items(
     let mut items: Vec<TextItem> = Vec::new();
     let mut seg = SegmentBuilder::new(emit_word_boxes, extract_text_metadata);
     let mut obj_meta = ObjMetaCache::default();
+    let mut previous_paint_object = None;
     let mut glyph_decoder = GlyphDecoder::new(
         std::env::var("LITEPARSE_DEBUG_GLYPH").is_ok(),
         garbage_fonts,
@@ -1531,10 +1640,20 @@ fn extract_page_text_items(
         };
         let unicode = cv.unicode();
         let is_generated = cv.is_generated();
+        if mode == TextExtractionMode::PaintedObjects && !is_generated {
+            let object = cv.text_object().map(|object| object as usize);
+            if previous_paint_object.is_some() && object != previous_paint_object {
+                seg.flush(&mut items);
+            }
+            previous_paint_object = object;
+        }
 
         // Skip invisible text (render mode 3) only when the page also has visible text.
         // If all text is invisible, it's likely an OCR text layer and we should keep it.
-        if skip_invisible && cv.text_render_mode() == Some(3) {
+        if mode == TextExtractionMode::ReadingItems
+            && skip_invisible
+            && cv.text_render_mode() == Some(3)
+        {
             if debug {
                 let c_display = char::from_u32(unicode).unwrap_or('?');
                 eprintln!(
@@ -1544,58 +1663,17 @@ fn extract_page_text_items(
             continue;
         }
 
-        // Glyph-name recovery: when the font's unicode mapping is missing or
-        // untrusted, resolve the charcode's PostScript glyph name instead.
-        let decoded: Option<&str> = if is_generated {
-            None
-        } else {
-            glyph_decoder.decode(&cv, unicode)
-        };
-        // A glyph the decoder recovered (glyph-name / reverse-cmap / outline-hash
-        // resolver) carries correct text even though PDFium still reports a
-        // /ToUnicode map error for its raw char code. Don't count these toward the
-        // item's unmapped-char tally.
-        let recovered = decoded.is_some();
-
-        // Skip null / invalid sentinels (unless the glyph name recovered them)
-        if decoded.is_none() && (unicode == 0 || unicode == 0xFFFE || unicode == 0xFFFF) {
+        let Some((c, ligature_tail, recovered)) = decoded_glyph(&cv, &mut glyph_decoder, mode)
+        else {
             if debug {
-                eprintln!("[extract-debug] i={i} SKIP sentinel unicode=0x{unicode:04X}");
+                eprintln!("[extract-debug] i={i} SKIP invalid unicode=0x{unicode:04X}");
             }
             continue;
-        }
-
-        // Map to a Rust char, with special-case replacements.
-        // Some PDF fonts encode ligatures as control characters; expand them.
-        // We use the first char for segment decisions, then append trailing chars.
-        let (c, ligature_tail): (char, &str) = if let Some(s) = decoded {
-            let mut it = s.chars();
-            (it.next().unwrap(), it.as_str())
-        } else {
-            match unicode {
-                0x01 => (' ', ""), // SOH → space: buggy subset fonts (e.g. some
-                // Calibri/Cambria embeds) encode the space glyph as 0x01. Left as
-                // a raw control char it fuses adjacent words ("StatisticsCheatSheet");
-                // as a space it drives the normal pending-space word break below.
-                0x02 => ('-', ""),   // STX → hyphen (common in some PDF encodings)
-                0x1A => ('f', "f"),  // ff ligature
-                0x1B => ('f', "t"),  // ft ligature
-                0x1C => ('f', "i"),  // fi ligature
-                0x1D => ('T', "h"),  // Th ligature
-                0x1E => ('f', "fi"), // ffi ligature
-                0x1F => ('f', "l"),  // fl ligature
-                _ => match char::from_u32(unicode) {
-                    Some(ch_mapped) => (ch_mapped, ""),
-                    None => {
-                        if debug {
-                            eprintln!("[extract-debug] i={i} SKIP invalid unicode=0x{unicode:04X}");
-                        }
-                        continue;
-                    }
-                },
-            }
         };
-        let c = normalize_punct(c);
+        let c = match mode {
+            TextExtractionMode::ReadingItems => normalize_punct(c),
+            TextExtractionMode::PaintedObjects => c,
+        };
 
         // Newlines: flush the current segment
         if c == '\n' || c == '\r' {
@@ -1636,7 +1714,10 @@ fn extract_page_text_items(
         let vp_loose = vp_xform.transform_bounds(&loose_box);
 
         // Skip zero-height characters (phantom dots from dot leader decorations)
-        if vp_loose.bottom - vp_loose.top < 0.5 {
+        const MIN_READING_GLYPH_HEIGHT_PTS: f32 = 0.5;
+        if mode == TextExtractionMode::ReadingItems
+            && vp_loose.bottom - vp_loose.top < MIN_READING_GLYPH_HEIGHT_PTS
+        {
             if debug {
                 eprintln!(
                     "[extract-debug] i={i} SKIP zero-height char='{c}' height={:.2} vp=({:.1},{:.1})-({:.1},{:.1})",
@@ -1744,8 +1825,7 @@ fn extract_page_text_items(
                 let meta = obj_meta.meta_for(&ch, cv.text_object());
                 seg.start(
                     c,
-                    &vp_loose,
-                    &vp_strict,
+                    (&vp_loose, &vp_strict),
                     &cv,
                     recovered,
                     page_rotation,
@@ -1759,8 +1839,7 @@ fn extract_page_text_items(
                     let meta = obj_meta.meta_for(&ch, cv.text_object());
                     seg.start(
                         c,
-                        &vp_loose,
-                        &vp_strict,
+                        (&vp_loose, &vp_strict),
                         &cv,
                         recovered,
                         page_rotation,
@@ -1843,8 +1922,7 @@ fn extract_page_text_items(
             let meta = obj_meta.meta_for(&ch, cv.text_object());
             seg.start(
                 c,
-                &vp_loose,
-                &vp_strict,
+                (&vp_loose, &vp_strict),
                 &cv,
                 recovered,
                 page_rotation,
@@ -1864,19 +1942,23 @@ fn extract_page_text_items(
     // rotation-adjusted viewport. Clip against dimensions in that same space;
     // using the raw CropBox dimensions here drops the right/bottom portion of
     // /Rotate 90 and /Rotate 270 pages.
-    let (vb_w, vb_h) = page.viewport_size(view_box);
-    let pre_clip_count = items.len();
-    items.retain(|it| {
-        it.x < vb_w
-            && it.x + it.width.max(0.1) > 0.0
-            && it.y < vb_h
-            && it.y + it.height.max(0.1) > 0.0
-    });
-    if debug && items.len() < pre_clip_count {
-        eprintln!(
-            "[extract-debug] off-page clip removed {} items",
-            pre_clip_count - items.len()
-        );
+    // Geometry captures the original paints, including those outside the
+    // viewport. Only reading extraction removes neighbouring-page content.
+    if mode == TextExtractionMode::ReadingItems {
+        let (vb_w, vb_h) = page.viewport_size(view_box);
+        let pre_clip_count = items.len();
+        items.retain(|it| {
+            it.x < vb_w
+                && it.x + it.width.max(0.1) > 0.0
+                && it.y < vb_h
+                && it.y + it.height.max(0.1) > 0.0
+        });
+        if debug && items.len() < pre_clip_count {
+            eprintln!(
+                "[extract-debug] off-page clip removed {} items",
+                pre_clip_count - items.len()
+            );
+        }
     }
 
     if debug {
@@ -1887,7 +1969,9 @@ fn extract_page_text_items(
     // Some PDFs (especially those with chart/figure annotations) produce duplicate
     // text objects at the same position.
     let pre_dedup_count = items.len();
-    dedup_overlapping_items(&mut items, debug);
+    if mode == TextExtractionMode::ReadingItems {
+        dedup_overlapping_items(&mut items, debug);
+    }
 
     if debug && items.len() < pre_dedup_count {
         eprintln!(
@@ -2181,18 +2265,7 @@ fn adjust_angle_for_rotation(angle_rad: f32, page_rotation: i32) -> f32 {
 /// Decompose scale factors from a 2D affine matrix.
 /// Computes eigenvalues of M^T * M.
 pub(crate) fn decompose_scale(m: &pdfium::Matrix) -> (f32, f32) {
-    let (a, b, c, d) = (m.a as f64, m.b as f64, m.c as f64, m.d as f64);
-    // M^T * M
-    let mt_a = a * a + b * b;
-    let mt_b = a * c + b * d;
-    let mt_d = c * c + d * d;
-    let first = (mt_a + mt_d) / 2.0;
-    let disc = ((mt_a + mt_d).powi(2) - 4.0 * (mt_a * mt_d - mt_b * mt_b)).sqrt() / 2.0;
-    let sx = (first + disc).sqrt();
-    let sy = (first - disc).sqrt();
-    let sx = if sx.is_nan() { 1.0 } else { sx };
-    let sy = if sy.is_nan() { 1.0 } else { sy };
-    (sx as f32, sy as f32)
+    m.scale_factors()
 }
 
 /// Minimum genuine-space samples required before trusting per-font calibration.
@@ -3162,13 +3235,13 @@ impl SegmentBuilder {
     fn start(
         &mut self,
         c: char,
-        vp_loose: &RectF,
-        vp_strict: &RectF,
+        bounds: (&RectF, &RectF),
         cv: &CharView<'_, '_>,
         recovered: bool,
         page_rotation: i32,
         meta: &ObjTextMeta,
     ) {
+        let (vp_loose, vp_strict) = bounds;
         self.text.clear();
         self.text.push(c);
         self.vp_left = vp_loose.left;

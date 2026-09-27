@@ -29,9 +29,9 @@ fn main() {
     // --allow-multiple-definition keep the first definition) and any FreeType
     // longjmp aborts the whole module. Older pdfium builds fold setjmp into
     // libc.a with no libsetjmp.a; there the stubs remain the only providers.
-    if let Ok(lib_path) = env::var("DEP_PDFIUM_LIB_PATH") {
-        if Path::new(&lib_path).join("libsetjmp.a").exists() {
-            println!("cargo:rustc-cfg=have_libsetjmp");
-        }
+    if let Ok(lib_path) = env::var("DEP_PDFIUM_LIB_PATH")
+        && Path::new(&lib_path).join("libsetjmp.a").exists()
+    {
+        println!("cargo:rustc-cfg=have_libsetjmp");
     }
 }

@@ -46,7 +46,7 @@ pub fn search_items(items: &[TextItem], options: &SearchOptions) -> Vec<TextItem
     let mut start = 0;
     while start < items.len() {
         let mut combined = String::new();
-        let mut found = false;
+        let mut matched_end = None;
 
         for end in start..items.len() {
             if end > start {
@@ -94,8 +94,7 @@ pub fn search_items(items: &[TextItem], options: &SearchOptions) -> Vec<TextItem
                 });
 
                 // Advance past the match to avoid duplicates
-                start = end + 1;
-                found = true;
+                matched_end = Some(end);
                 break;
             }
 
@@ -105,9 +104,7 @@ pub fn search_items(items: &[TextItem], options: &SearchOptions) -> Vec<TextItem
             }
         }
 
-        if !found {
-            start += 1;
-        }
+        start = matched_end.map_or(start + 1, |end| end + 1);
     }
 
     results

@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 595.3200073242188,
+    "heightPts": 842.0399780273438,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "𝑉ℎ𝑜𝑙𝑒",
+        "x0": 293.95001220703125,
+        "y0": 327.4219970703125,
+        "x1": 317.8736877441406,
+        "y1": 341.0614318847656,
+        "fontSize": 9.216000366210938,
+        "fontName": "BCDLEE+CambriaMath"
+      }
+    ],
+    "source": "vector"
+  }
+]

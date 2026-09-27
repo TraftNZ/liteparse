@@ -16,6 +16,7 @@ use std::marker::PhantomData;
 
 use crate::bitmap::Bitmap;
 use crate::ffi;
+use crate::font::Font;
 use crate::library::Library;
 use crate::page::{Page, SegmentKind, image_object_data, read_color};
 use crate::types::{Color, Matrix, RectF};
@@ -118,6 +119,13 @@ impl<'page, 'lib> PageObject<'page, 'lib> {
             pdfium_sys::FPDF_PAGEOBJ_FORM => PageObjectKind::Form,
             _ => PageObjectKind::Unknown,
         }
+    }
+
+    /// Borrow the font of a text object; other object kinds have no text font.
+    /// The font handle is owned by this object's loaded page.
+    pub fn font(&self) -> Option<Font> {
+        // The handle came from the loaded page or one of its Forms.
+        unsafe { Font::from_text_object(self.handle) }
     }
 
     /// The object's transformation matrix (`FPDFPageObj_GetMatrix`). For an object

@@ -14,6 +14,8 @@ use std::{
     path::Path,
 };
 
+const RGBA_CHANNELS: usize = 4;
+
 /// Supported file extensions for conversion (non-PDF formats).
 const OFFICE_EXTENSIONS: &[&str] = &[
     "doc", "docx", "docm", "dot", "dotm", "dotx", "odt", "ott", "rtf", "pages",
@@ -447,7 +449,7 @@ fn separate_rgb_and_alpha_from_rgba(rgba: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
     let mut alpha = Vec::with_capacity(rgba.len() / 4);
 
-    for px in rgba.chunks_exact(4) {
+    for px in rgba.as_chunks::<RGBA_CHANNELS>().0 {
         rgb.push(px[0]);
         rgb.push(px[1]);
         rgb.push(px[2]);
@@ -657,7 +659,7 @@ fn rasterize_svg(data: &[u8]) -> Result<(Vec<u8>, u32, u32), LiteParseError> {
     // tiny_skia's Pixmap stores premultiplied RGBA; un-premultiply so the
     // PDF's separate RGB/SMask streams composite correctly.
     let mut rgba = pixmap.data().to_vec();
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<RGBA_CHANNELS>().0 {
         let a = px[3];
         if a != 0 && a != 255 {
             px[0] = ((px[0] as u16 * 255) / a as u16) as u8;

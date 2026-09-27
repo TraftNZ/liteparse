@@ -843,10 +843,7 @@ fn identify_glyph(resolver: &dyn GlyphResolver, font: &Font, char_code: u32) -> 
 fn c_string_from_utf32(codepoints: &[u32]) -> Option<String> {
     let mut chars = Vec::with_capacity(codepoints.len());
     for &codepoint in codepoints {
-        match char::from_u32(codepoint) {
-            Some(c) => chars.push(c),
-            None => return None,
-        }
+        chars.push(char::from_u32(codepoint)?);
     }
     Some(chars.into_iter().take_while(|&c| c != '\0').collect())
 }

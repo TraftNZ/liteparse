@@ -1,0 +1,45 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 400,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "Visible text keeps the page dominated by readable characters.",
+        "x0": 20,
+        "y0": 29.25,
+        "x1": 296.2499084472656,
+        "y1": 42.9900016784668,
+        "fontSize": 10,
+        "fontName": "Helvetica"
+      },
+      {
+        "text": "Hidden",
+        "x0": 20,
+        "y0": 69.25,
+        "x1": 51.68000793457031,
+        "y1": 82.98999786376953,
+        "fontSize": 10,
+        "fontName": "Helvetica"
+      },
+      {
+        "text": "SS",
+        "x0": 20,
+        "y0": 119.73124694824219,
+        "x1": 20.333499908447266,
+        "y1": 120.07475280761719,
+        "fontSize": 0.25,
+        "fontName": "Helvetica"
+      }
+    ],
+    "source": "vector"
+  }
+]

@@ -248,8 +248,10 @@ pub fn merge_ocr(
     pages: &mut [Page],
     outcomes: Vec<PageOcrOutcome>,
     ocr_failure_fatal: bool,
+    min_confidence: f32,
+    quiet: bool,
 ) -> Result<(), LiteParseError> {
-    ocr_merge::merge_ocr_results(pages, outcomes, ocr_failure_fatal)
+    ocr_merge::merge_ocr_results(pages, outcomes, ocr_failure_fatal, min_confidence, quiet)
 }
 
 // ── Content filters ────────────────────────────────────────────────────

@@ -1,0 +1,36 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 250,
+    "heightPts": 160,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "4.2.1 SK 1",
+        "x0": 40,
+        "y0": 47.099998474121094,
+        "x1": 102.70399475097656,
+        "y1": 63.80400085449219,
+        "fontSize": 12,
+        "fontName": "Helvetica"
+      },
+      {
+        "text": "4.2.1 SK 1",
+        "x0": 40,
+        "y0": 82.0999984741211,
+        "x1": 102.70399475097656,
+        "y1": 98.80400085449219,
+        "fontSize": 12,
+        "fontName": "Helvetica"
+      }
+    ],
+    "source": "vector"
+  }
+]

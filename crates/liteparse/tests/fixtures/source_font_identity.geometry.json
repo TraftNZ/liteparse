@@ -1,0 +1,36 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "NOT FOR",
+        "x0": 40,
+        "y0": 39.13999938964844,
+        "x1": 94,
+        "y1": 52.52000045776367,
+        "fontSize": 12,
+        "fontName": "BCDGEE+Arial-BoldMT"
+      },
+      {
+        "text": "NOT FOR",
+        "x0": 40,
+        "y0": 81.26399993896484,
+        "x1": 94,
+        "y1": 92.5199966430664,
+        "fontSize": 12,
+        "fontName": "Arial-BoldMT"
+      }
+    ],
+    "source": "vector"
+  }
+]

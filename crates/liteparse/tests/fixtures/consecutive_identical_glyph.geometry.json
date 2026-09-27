@@ -1,0 +1,63 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 612,
+    "heightPts": 792,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "NAL",
+        "x0": 40,
+        "y0": 684.2120971679688,
+        "x1": 56.82191467285156,
+        "y1": 694.595947265625,
+        "fontSize": 10.383898735046387,
+        "fontName": "IMILJO+Calibri-Light"
+      },
+      {
+        "text": "NAL",
+        "x0": 40,
+        "y0": 704.2120971679688,
+        "x1": 56.82191467285156,
+        "y1": 714.595947265625,
+        "fontSize": 10.383898735046387,
+        "fontName": "IMILJO+Calibri-Light"
+      },
+      {
+        "text": "NAL",
+        "x0": 40,
+        "y0": 704.2120971679688,
+        "x1": 56.82191467285156,
+        "y1": 714.595947265625,
+        "fontSize": 10.383898735046387,
+        "fontName": "IMILJO+Calibri-Light"
+      },
+      {
+        "text": "N",
+        "x0": 40,
+        "y0": 724.2120971679688,
+        "x1": 46.62492752075195,
+        "y1": 734.595947265625,
+        "fontSize": 10.383898735046387,
+        "fontName": "IMILJO+Calibri-Light"
+      },
+      {
+        "text": "N",
+        "x0": 80,
+        "y0": 724.2120971679688,
+        "x1": 86.62492370605469,
+        "y1": 734.595947265625,
+        "fontSize": 10.383898735046387,
+        "fontName": "IMILJO+Calibri-Light"
+      }
+    ],
+    "source": "vector"
+  }
+]

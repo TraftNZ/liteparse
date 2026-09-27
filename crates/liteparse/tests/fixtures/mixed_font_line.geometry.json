@@ -1,0 +1,36 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 300,
+    "heightPts": 160,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "Mixed-fonts",
+        "x0": 40,
+        "y0": 47.099998474121094,
+        "x1": 115.2039794921875,
+        "y1": 63.80400085449219,
+        "fontSize": 12,
+        "fontName": "Helvetica"
+      },
+      {
+        "text": "Next line",
+        "x0": 40,
+        "y0": 83.81600189208984,
+        "x1": 104.79998779296875,
+        "y1": 98.80400085449219,
+        "fontSize": 12,
+        "fontName": "Courier"
+      }
+    ],
+    "source": "vector"
+  }
+]

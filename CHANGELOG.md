@@ -1,5 +1,21 @@
 # @llamaindex/liteparse
 
+## Unreleased Rust CLI
+
+- Add optional native PDF distance, area and perimeter measurement with explicit
+  scale/calibration, holes, full source polylines and recorded segment snapping.
+
+- Add optional local OAR OCR model selection, page selection, confidence floor,
+  detector tiling, and an adjustable OCR render cap to `lit parse`.
+- Join short runs of aligned OCR lines so dense drawings retain note phrases.
+- Add versioned `lit pdf` JSON operations for page information, rendering,
+  clipping, and source image extraction.
+- Preserve source image alpha for compressed and uncompressed 8-bit soft masks.
+- Encode PDF page/clip JPEGs with quality 80 and averaged 4:2:0 chroma.
+- Preserve supplementary Unicode glyphs represented by UTF-16 pairs.
+- Preserve geometry lines across font changes and retain verified space paints.
+- Emit PDF geometry generation 9 for distinct PDFium artifact caches.
+
 ## 1.5.3
 
 ### Patch Changes

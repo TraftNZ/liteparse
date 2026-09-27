@@ -1,0 +1,573 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "mixed",
+    "pathOps": 11,
+    "imageOps": 1,
+    "imageCoverage": 0.04,
+    "segments": [
+      {
+        "x1": 30,
+        "y1": 110,
+        "x2": 80,
+        "y2": 110,
+        "ownerPath": 1,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 31,
+        "y1": 110,
+        "x2": 81,
+        "y2": 110,
+        "ownerPath": 2,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 32,
+        "y1": 110,
+        "x2": 82,
+        "y2": 110,
+        "ownerPath": 3,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 33,
+        "y1": 110,
+        "x2": 83,
+        "y2": 110,
+        "ownerPath": 4,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 34,
+        "y1": 110,
+        "x2": 84,
+        "y2": 110,
+        "ownerPath": 5,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 35,
+        "y1": 110,
+        "x2": 85,
+        "y2": 110,
+        "ownerPath": 6,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 36,
+        "y1": 110,
+        "x2": 86,
+        "y2": 110,
+        "ownerPath": 7,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 37,
+        "y1": 110,
+        "x2": 87,
+        "y2": 110,
+        "ownerPath": 8,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 30,
+        "y1": 170,
+        "x2": 80,
+        "y2": 170,
+        "ownerPath": 9,
+        "strokeWidth": 3,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          20,
+          20,
+          180,
+          180
+        ]
+      },
+      {
+        "x1": 60,
+        "y1": 140,
+        "x2": 120,
+        "y2": 140,
+        "ownerPath": 10,
+        "strokeWidth": 3,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 40,
+        "y1": 100,
+        "x2": 120,
+        "y2": 100,
+        "ownerPath": 11,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      }
+    ],
+    "polylines": [
+      {
+        "points": [
+          [
+            30,
+            110
+          ],
+          [
+            80,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            31,
+            110
+          ],
+          [
+            81,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            32,
+            110
+          ],
+          [
+            82,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            33,
+            110
+          ],
+          [
+            83,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            34,
+            110
+          ],
+          [
+            84,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            35,
+            110
+          ],
+          [
+            85,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            36,
+            110
+          ],
+          [
+            86,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            37,
+            110
+          ],
+          [
+            87,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            30,
+            170
+          ],
+          [
+            80,
+            170
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            60,
+            140
+          ],
+          [
+            120,
+            140
+          ]
+        ],
+        "closed": false
+      },
+      {
+        "points": [
+          [
+            40,
+            100
+          ],
+          [
+            120,
+            100
+          ]
+        ],
+        "closed": false
+      }
+    ],
+    "paths": [
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 30,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 80,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 31,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 81,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 32,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 82,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 33,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 83,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 34,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 84,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 35,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 85,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 36,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 86,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 37,
+            "y": 110
+          },
+          {
+            "kind": "lineto",
+            "x": 87,
+            "y": 110
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 30,
+            "y": 170
+          },
+          {
+            "kind": "lineto",
+            "x": 80,
+            "y": 170
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 3,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          20,
+          20,
+          180,
+          180
+        ]
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 60,
+            "y": 140
+          },
+          {
+            "kind": "lineto",
+            "x": 120,
+            "y": 140
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 3,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 40,
+            "y": 100
+          },
+          {
+            "kind": "lineto",
+            "x": 120,
+            "y": 100
+          }
+        ],
+        "closed": false,
+        "strokeWidth": 1,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      }
+    ],
+    "textSpans": null,
+    "source": "vector"
+  }
+]

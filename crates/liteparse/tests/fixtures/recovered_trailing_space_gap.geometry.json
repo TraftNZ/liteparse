@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 595.219970703125,
+    "heightPts": 842,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "Page | i",
+        "x0": 40,
+        "y0": 753.4439697265625,
+        "x1": 79.52799224853516,
+        "y1": 764.135986328125,
+        "fontSize": 12,
+        "fontName": "GMBVHK+CalibriLight"
+      }
+    ],
+    "source": "vector"
+  }
+]

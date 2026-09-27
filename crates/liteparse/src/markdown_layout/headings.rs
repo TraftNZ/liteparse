@@ -608,7 +608,7 @@ pub fn compute_body_size(pages: &[ParsedPage]) -> f32 {
         .fold(0.0_f32, f32::max);
     if std::env::var_os("LITEPARSE_DEBUG_MD").is_some() {
         let mut w: Vec<_> = weights.values().copied().collect();
-        w.sort_by(|a, b| b.1.cmp(&a.1));
+        w.sort_by_key(|a| std::cmp::Reverse(a.1));
         eprintln!(
             "[MD body-size] body={body:.2} top weights={:?}",
             &w[..w.len().min(6)]

@@ -17,21 +17,14 @@ static BINDINGS: OnceLock<PdfiumBindings> = OnceLock::new();
 const PDFIUM_LIB_DIR: &str = env!("PDFIUM_LIB_DIR");
 
 macro_rules! load_fn {
-    ($lib:expr, $name:literal) => {{
-        let sym = unsafe { $lib.get::<*const ()>($name.as_bytes())? };
-        unsafe { std::mem::transmute(*sym) }
-    }};
+    ($lib:expr, $name:literal) => {{ unsafe { *$lib.get($name.as_bytes())? } }};
 }
 
 /// Like `load_fn!`, but yields `None` instead of failing the whole load when
 /// the symbol is missing. For APIs a trimmed pdfium build may omit — callers
 /// must degrade gracefully rather than assume the function exists.
 macro_rules! load_fn_opt {
-    ($lib:expr, $name:literal) => {{
-        unsafe { $lib.get::<*const ()>($name.as_bytes()) }
-            .ok()
-            .map(|sym| unsafe { std::mem::transmute(*sym) })
-    }};
+    ($lib:expr, $name:literal) => {{ unsafe { $lib.get($name.as_bytes()) }.ok().map(|sym| *sym) }};
 }
 
 /// Holds all pdfium function pointers loaded at runtime.
@@ -359,6 +352,14 @@ pub struct PdfiumBindings {
         std::os::raw::c_int,
         std::os::raw::c_int,
         std::os::raw::c_int,
+        std::os::raw::c_int,
+    ),
+
+    pub FPDF_RenderPageBitmapWithMatrix: unsafe extern "C" fn(
+        FPDF_BITMAP,
+        FPDF_PAGE,
+        *const FS_MATRIX,
+        *const FS_RECTF,
         std::os::raw::c_int,
     ),
 
@@ -692,6 +693,7 @@ impl PdfiumBindings {
             FPDFBitmap_GetBuffer: load_fn!(lib, "FPDFBitmap_GetBuffer"),
             FPDFBitmap_FillRect: load_fn!(lib, "FPDFBitmap_FillRect"),
             FPDF_RenderPageBitmap: load_fn!(lib, "FPDF_RenderPageBitmap"),
+            FPDF_RenderPageBitmapWithMatrix: load_fn!(lib, "FPDF_RenderPageBitmapWithMatrix"),
             FPDFTextObj_GetFont: load_fn!(lib, "FPDFTextObj_GetFont"),
             FPDFFont_GetBaseFontName: load_fn!(lib, "FPDFFont_GetBaseFontName"),
             FPDFFont_GetType: load_fn!(lib, "FPDFFont_GetType"),

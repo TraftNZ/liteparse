@@ -24,6 +24,13 @@ use crate::types::{
 };
 use pdfium::Library;
 
+type SelectedBlockPages = (
+    Vec<Page>,
+    Vec<Vec<stages::PositionedBlock>>,
+    Vec<Option<stages::PageComplexityStats>>,
+    bool,
+);
+
 /// Result of parsing a document.
 pub struct ParseResult {
     /// Total number of pages in the source document, before `target_pages` or
@@ -348,14 +355,36 @@ impl LiteParse {
         &self,
         grayscale: bool,
         extracted: &stages::ExtractedPages,
-    ) -> stages::OcrRenderOptions {
+    ) -> Result<stages::OcrRenderOptions, LiteParseError> {
+        if !self.config.ocr_min_confidence.is_finite()
+            || !(0.0..=1.0).contains(&self.config.ocr_min_confidence)
+        {
+            return Err("--ocr-min-confidence must be between 0 and 1".into());
+        }
+        if self.config.ocr_max_long_edge_px == 0 {
+            return Err("--ocr-max-long-edge-px must be positive".into());
+        }
+        let selection = self
+            .config
+            .ocr_pages
+            .as_deref()
+            .map(parse_target_pages)
+            .transpose()
+            .map_err(|err| LiteParseError::Other(format!("invalid --ocr-pages: {err}")))?;
+        if let (Some(ocr_pages), Some(target_pages)) = (&selection, self.resolve_target_pages()?)
+            && let Some(page) = ocr_pages.iter().find(|page| !target_pages.contains(page))
+        {
+            return Err(LiteParseError::Other(format!(
+                "OCR page {page} is outside --target-pages"
+            )));
+        }
         let reflatten_pages = if extracted.flattened_form_widgets && !self.config.render_form_fields
         {
             extracted.flattened_page_numbers.iter().copied().collect()
         } else {
             std::collections::HashSet::new()
         };
-        stages::OcrRenderOptions {
+        Ok(stages::OcrRenderOptions {
             // One round per `num_workers` pages bounds raster memory.
             max_rasters: self.config.num_workers.max(1),
             dpi: self.config.dpi,
@@ -363,8 +392,9 @@ impl LiteParse {
             render_form_fields: self.config.render_form_fields,
             continue_on_page_error: self.config.continue_on_page_error,
             reflatten_pages,
-            selection: None,
-        }
+            selection: selection.map(|pages| pages.into_iter().collect()),
+            max_long_edge_px: self.config.ocr_max_long_edge_px,
+        })
     }
 
     /// The screenshot stage's options, derived from config. `parse()` passes
@@ -407,6 +437,83 @@ impl LiteParse {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+            let engine_name = self.config.ocr_engine.as_deref().unwrap_or_else(|| {
+                if self.config.ocr_server_url.is_some() {
+                    "http"
+                } else {
+                    "tesseract"
+                }
+            });
+            if self.config.ocr_server_url.is_some() && engine_name != "http" {
+                return Err("--ocr-server-url requires --ocr-engine http".into());
+            }
+            if engine_name == "http" && self.config.ocr_server_url.is_none() {
+                return Err("--ocr-engine http requires --ocr-server-url".into());
+            }
+            if engine_name == "oar" {
+                #[cfg(feature = "oar-ocr")]
+                {
+                    use oar_ocr::core::config::OrtSessionConfig;
+                    use oar_ocr::domain::tasks::TextDetectionConfig;
+                    use oar_ocr::oarocr::OAROCRBuilder;
+                    use oar_ocr::processors::LimitType;
+
+                    const GENERAL_OCR_UNCLIP_RATIO: f32 = 2.0;
+                    const GENERAL_OCR_MAX_SIDE_LEN: u32 = 4000;
+
+                    let det = self.config.oar_det_model.as_deref().ok_or(
+                        "--ocr-engine oar requires --oar-det-model, --oar-rec-model and --oar-dict",
+                    )?;
+                    let rec = self.config.oar_rec_model.as_deref().ok_or(
+                        "--ocr-engine oar requires --oar-det-model, --oar-rec-model and --oar-dict",
+                    )?;
+                    let dict = self.config.oar_dict.as_deref().ok_or(
+                        "--ocr-engine oar requires --oar-det-model, --oar-rec-model and --oar-dict",
+                    )?;
+                    let mut builder = OAROCRBuilder::new(det, rec, dict);
+                    if let Some(threads) = self.config.oar_threads {
+                        if threads == 0 {
+                            return Err("--oar-threads must be positive".into());
+                        }
+                        builder = builder
+                            .ort_session(OrtSessionConfig::new().with_intra_threads(threads));
+                    }
+                    if let Some(limit) = self.config.oar_det_limit_side_len {
+                        if limit == 0 {
+                            return Err("--oar-det-limit-side-len must be positive".into());
+                        }
+                        builder = builder.text_detection_config(TextDetectionConfig {
+                            limit_side_len: Some(limit),
+                            limit_type: Some(LimitType::Max),
+                            unclip_ratio: GENERAL_OCR_UNCLIP_RATIO,
+                            max_side_len: Some(GENERAL_OCR_MAX_SIDE_LEN),
+                            ..Default::default()
+                        });
+                    }
+                    let engine =
+                        match (self.config.oar_tile_px, self.config.oar_tile_overlap_px) {
+                            (Some(tile), Some(overlap)) => {
+                                crate::ocr::oar::OarOcrEngine::from_builder_with_tiling(
+                                    builder, tile, overlap,
+                                )?
+                            }
+                            (None, None) => crate::ocr::oar::OarOcrEngine::from_builder(builder)?,
+                            _ => return Err(
+                                "--oar-tile-px and --oar-tile-overlap-px must be supplied together"
+                                    .into(),
+                            ),
+                        };
+                    return Ok(Some(std::sync::Arc::new(engine)));
+                }
+                #[cfg(not(feature = "oar-ocr"))]
+                return Err("--ocr-engine oar requires the oar-ocr build feature".into());
+            }
+            if engine_name != "http" && engine_name != "tesseract" {
+                return Err(format!(
+                    "unknown --ocr-engine {engine_name:?}; expected tesseract, oar, or http"
+                )
+                .into());
+            }
             if let Some(ref url) = self.config.ocr_server_url {
                 return Ok(Some(std::sync::Arc::new(
                     HttpOcrEngine::with_headers(
@@ -707,7 +814,7 @@ impl LiteParse {
                 stages::extract(&document, &self.extract_request(target_pages, max_pages))?;
             // Derived here, before the document is dropped, so the OCR rounds
             // below reproduce exactly what extraction did to it.
-            let ocr_render_options = self.ocr_render_options(ocr_grayscale, &extracted);
+            let ocr_render_options = self.ocr_render_options(ocr_grayscale, &extracted)?;
             let screenshot_options = self.screenshot_options(self.config.continue_on_page_error);
             // Reopening the input costs a full parse, so it is confined to the
             // one consumer that genuinely needs live widget annotations: the
@@ -819,7 +926,13 @@ impl LiteParse {
                     self.config.num_workers,
                 )
                 .await;
-                stages::merge_ocr(&mut pages, outcomes, self.config.ocr_failure_fatal)?;
+                stages::merge_ocr(
+                    &mut pages,
+                    outcomes,
+                    self.config.ocr_failure_fatal,
+                    self.config.ocr_min_confidence,
+                    self.config.quiet,
+                )?;
             }
         }
         let t_ocr = web_time::Instant::now();
@@ -949,15 +1062,7 @@ impl LiteParse {
         pages: Vec<Page>,
         page_blocks: Vec<Vec<stages::PositionedBlock>>,
         complexity: Vec<Option<stages::PageComplexityStats>>,
-    ) -> Result<
-        (
-            Vec<Page>,
-            Vec<Vec<stages::PositionedBlock>>,
-            Vec<Option<stages::PageComplexityStats>>,
-            bool,
-        ),
-        LiteParseError,
-    > {
+    ) -> Result<SelectedBlockPages, LiteParseError> {
         let mut selected: Vec<((Page, Vec<stages::PositionedBlock>), _)> =
             pages.into_iter().zip(page_blocks).zip(complexity).collect();
         let mut page_filtered = false;
@@ -1511,6 +1616,8 @@ mod tests {
             .expect("should convert and open a .doc");
 
         assert!(session.input.is_converted());
+        let expected_pages = session.total_pages();
+        assert!(expected_pages > 0);
         let converted_path = match &session.input.input {
             PdfInput::Path(p) => p.clone(),
             PdfInput::Bytes(_) => panic!("a converted .doc should resolve to a temp file path"),
@@ -1525,7 +1632,7 @@ mod tests {
                  would mean it was re-resolved or cleaned up per batch"
             );
         }
-        assert_eq!(pages, 2);
+        assert_eq!(pages, expected_pages as usize);
 
         drop(session);
         assert!(

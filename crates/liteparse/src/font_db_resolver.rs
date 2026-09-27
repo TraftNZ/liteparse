@@ -93,11 +93,7 @@ impl FontDbResolver {
         let mut map = ShardMap::new();
         // Each record is a 2-array `[bin(16+), positive int]`. The stream ends
         // (or a malformed record appears) and `read_array_len` errors — stop.
-        loop {
-            match rmp::decode::read_array_len(&mut rd) {
-                Ok(2) => {}
-                _ => break,
-            }
+        while let Ok(2) = rmp::decode::read_array_len(&mut rd) {
             let bin_len = match rmp::decode::read_bin_len(&mut rd) {
                 Ok(n) => n as usize,
                 Err(_) => break,

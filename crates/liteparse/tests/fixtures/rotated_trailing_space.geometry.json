@@ -1,0 +1,28 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "W",
+        "x0": 39.82606506347656,
+        "y0": 94.66793060302734,
+        "x1": 45.596038818359375,
+        "y1": 102.07981872558594,
+        "fontSize": 4.959553241729736,
+        "fontName": "JRCNPK+CIDFont+F3",
+        "rotation": 6.598934755411882
+      }
+    ],
+    "source": "vector"
+  }
+]

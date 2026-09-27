@@ -24,6 +24,28 @@ pub struct Matrix {
     pub f: f32,
 }
 
+impl Matrix {
+    /// Principal affine scales, ordered from largest to smallest.
+    pub fn scale_factors(&self) -> (f32, f32) {
+        let (a, b, c, d) = (
+            f64::from(self.a),
+            f64::from(self.b),
+            f64::from(self.c),
+            f64::from(self.d),
+        );
+        let mt_a = a * a + b * b;
+        let mt_b = a * c + b * d;
+        let mt_d = c * c + d * d;
+        let first = (mt_a + mt_d) / 2.0;
+        let disc = ((mt_a + mt_d).powi(2) - 4.0 * (mt_a * mt_d - mt_b * mt_b)).sqrt() / 2.0;
+        let sx = (first + disc).sqrt();
+        let sy = (first - disc).sqrt();
+        let sx = if sx.is_nan() { 1.0 } else { sx };
+        let sy = if sy.is_nan() { 1.0 } else { sy };
+        (sx as f32, sy as f32)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Color {
     pub r: u8,

@@ -442,6 +442,69 @@ impl<'doc, 'lib: 'doc> Page<'doc, 'lib> {
         self.render_with_form(dpi, None)
     }
 
+    /// Render lossless grayscale pixels for raster geometry tracing.
+    pub fn render_gray(&self, dpi: f32) -> Result<Bitmap<'lib>, PdfiumError> {
+        const POINTS_PER_INCH: f32 = 72.0;
+        let scale = dpi / POINTS_PER_INCH * self.user_unit;
+        if !scale.is_finite() || scale <= 0.0 || scale * scale == 0.0 {
+            return Err(PdfiumError::OperationFailed);
+        }
+        let width = (self.width() * scale).ceil() as i32;
+        let height = (self.height() * scale).ceil() as i32;
+        // SAFETY: the page holds the PDFium library lock for 'lib, and the
+        // returned bitmap is tied to that lifetime.
+        let bitmap =
+            unsafe { Bitmap::new_with_format(width, height, pdfium_sys::FPDFBitmap_Gray as i32) }?;
+        bitmap.fill_rect(0, 0, width, height, 0xFFFFFFFF);
+        let flags = (pdfium_sys::FPDF_ANNOT | pdfium_sys::FPDF_PRINTING) as i32;
+        self.render_into_scaled(&bitmap, scale, [0.0, 0.0], flags)?;
+        Ok(bitmap)
+    }
+
+    /// Render at an exact scale into an existing bitmap, with a device offset.
+    /// The page display transform (crop and rotation) precedes this transform.
+    pub fn render_into_scaled(
+        &self,
+        bitmap: &Bitmap<'lib>,
+        scale: f32,
+        offset: [f32; 2],
+        flags: i32,
+    ) -> Result<(), PdfiumError> {
+        if !scale.is_finite()
+            || scale <= 0.0
+            || scale * scale == 0.0
+            || offset.iter().any(|value| !value.is_finite())
+        {
+            return Err(PdfiumError::OperationFailed);
+        }
+        let matrix = pdfium_sys::FS_MATRIX {
+            a: scale,
+            b: 0.0,
+            c: 0.0,
+            d: scale,
+            e: offset[0],
+            f: offset[1],
+        };
+        let clipping = pdfium_sys::FS_RECTF {
+            left: 0.0,
+            top: 0.0,
+            right: bitmap.width() as f32,
+            bottom: bitmap.height() as f32,
+        };
+        // PDFium applies the page's display transform before this matrix.
+        // Preserve exact DPI instead of stretching to rounded pixel dimensions.
+        unsafe {
+            ffi!(FPDF_RenderPageBitmapWithMatrix(
+                bitmap.handle(),
+                self.handle,
+                &matrix,
+                &clipping,
+                flags
+            ));
+        }
+        Ok(())
+    }
+
     /// Render the page to a BGRA bitmap, drawing form-field appearances
     /// (filled values, checkbox states) on top via `FPDF_FFLDraw` when a form
     /// environment is supplied. Without it, PDFium only paints widget
@@ -1232,8 +1295,7 @@ impl<'doc, 'lib: 'doc> Page<'doc, 'lib> {
                 continue;
             }
 
-            let parent =
-                unsafe { ffi!(FPDFAnnot_GetLinkedAnnot(annot, b"Parent\0".as_ptr().cast())) };
+            let parent = unsafe { ffi!(FPDFAnnot_GetLinkedAnnot(annot, c"Parent".as_ptr())) };
             let name = first_present([
                 read_form_string(
                     form.handle,
@@ -2108,6 +2170,15 @@ impl ViewportTransform {
         )
     }
 
+    /// Transform a direction without applying the viewport translation.
+    #[inline]
+    pub fn transform_vector(&self, page_x: f32, page_y: f32) -> (f32, f32) {
+        (
+            self.a * page_x + self.b * page_y,
+            self.c * page_x + self.d * page_y,
+        )
+    }
+
     /// Transform a bounding rect from page space to viewport space.
     #[inline]
     pub fn transform_bounds(&self, page_bounds: &RectF) -> RectF {
@@ -2205,6 +2276,10 @@ mod tests {
             "<< /Type /Annot /Subtype /Highlight /Rect [10 20 100 40] /QuadPoints [10 40 100 40 10 20 100 20] /Contents (review this) /T (Reviewer) /CreationDate (D:20260102030405Z) /M (D:20260103040506Z) >>",
             "<< /Type /Annot /Subtype /Link /Rect [10 50 100 70] /Border [0 0 0] /A << /S /URI /URI (https://example.com) >> >>",
         ];
+        pdf_from_objects(&objects)
+    }
+
+    fn pdf_from_objects(objects: &[&str]) -> Vec<u8> {
         let mut pdf = b"%PDF-1.7\n".to_vec();
         let mut offsets = Vec::with_capacity(objects.len());
         for (index, object) in objects.iter().enumerate() {
@@ -2225,6 +2300,36 @@ mod tests {
             .as_bytes(),
         );
         pdf
+    }
+
+    #[test]
+    fn grayscale_preserves_exact_dpi_at_fractional_rotated_page_edges() {
+        const MARKER_EDGE: usize = 200;
+        const SAMPLE_INTERIOR: usize = 50;
+        let content = "0 g 10 20 100 100 re f";
+        let stream = format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        );
+        let bytes = pdf_from_objects(&[
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [10 20 210.25 120.25] /Rotate 90 /UserUnit 2 /Resources << >> /Contents 4 0 R >>",
+            &stream,
+        ]);
+        let library = Library::init();
+        let document = library.load_document_from_bytes(&bytes, None).unwrap();
+        let page = document.page(0).unwrap();
+        let bitmap = page.render_gray(72.0).unwrap();
+        assert_eq!((bitmap.width(), bitmap.height()), (201, 401));
+        let pixel = |x: usize, y: usize| bitmap.buffer()[y * bitmap.stride() as usize + x];
+        assert_eq!(pixel(MARKER_EDGE - 1, SAMPLE_INTERIOR), 0);
+        assert_eq!(pixel(MARKER_EDGE, SAMPLE_INTERIOR), 255);
+        assert_eq!(pixel(SAMPLE_INTERIOR, MARKER_EDGE - 1), 0);
+        assert_eq!(pixel(SAMPLE_INTERIOR, MARKER_EDGE), 255);
+        for dpi in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::MIN_POSITIVE] {
+            assert!(page.render_gray(dpi).is_err());
+        }
     }
 
     #[test]

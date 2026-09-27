@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 1190.52001953125,
+    "heightPts": 841.9199829101562,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "APPROX 75m2 AND APPROX 32m3",
+        "x0": 1093.5283203125,
+        "y0": 653.1500244140625,
+        "x1": 1159.211669921875,
+        "y1": 661.6318969726562,
+        "fontSize": 4.8449315494961205,
+        "fontName": "JRCNPK+CIDFont+F3"
+      }
+    ],
+    "source": "vector"
+  }
+]

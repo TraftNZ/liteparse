@@ -1,0 +1,708 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 100,
+    "heightPts": 100,
+    "class": "mixed",
+    "pathOps": 6,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [
+      {
+        "x1": 10,
+        "y1": 90,
+        "x2": 10,
+        "y2": 90,
+        "ownerPath": 1,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 90,
+        "x2": 10,
+        "y2": 90,
+        "ownerPath": 1,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 90,
+        "x2": 10,
+        "y2": 90,
+        "ownerPath": 1,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 20,
+        "y1": 80,
+        "x2": 30,
+        "y2": 80,
+        "ownerPath": 2,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 30,
+        "y1": 80,
+        "x2": 30,
+        "y2": 80,
+        "ownerPath": 2,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 30,
+        "y1": 80,
+        "x2": 20,
+        "y2": 80,
+        "ownerPath": 2,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 40,
+        "y1": 60,
+        "x2": 40,
+        "y2": 60,
+        "ownerPath": 3,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 40,
+        "y1": 60,
+        "x2": 40,
+        "y2": 50,
+        "ownerPath": 3,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 40,
+        "y1": 50,
+        "x2": 40,
+        "y2": 50,
+        "ownerPath": 3,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 40,
+        "y1": 50,
+        "x2": 40,
+        "y2": 60,
+        "ownerPath": 3,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 60,
+        "y1": 40,
+        "x2": 70,
+        "y2": 40,
+        "ownerPath": 4,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 70,
+        "y1": 40,
+        "x2": 70,
+        "y2": 30,
+        "ownerPath": 4,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 70,
+        "y1": 30,
+        "x2": 60,
+        "y2": 30,
+        "ownerPath": 4,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 60,
+        "y1": 30,
+        "x2": 60,
+        "y2": 40,
+        "ownerPath": 4,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 80,
+        "y1": 20,
+        "x2": 70,
+        "y2": 20,
+        "ownerPath": 5,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 70,
+        "y1": 20,
+        "x2": 70,
+        "y2": 30,
+        "ownerPath": 5,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 70,
+        "y1": 30,
+        "x2": 80,
+        "y2": 30,
+        "ownerPath": 5,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 80,
+        "y1": 30,
+        "x2": 80,
+        "y2": 20,
+        "ownerPath": 5,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 40,
+        "x2": 10,
+        "y2": 40,
+        "ownerPath": 6,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 40,
+        "x2": 10,
+        "y2": 40,
+        "ownerPath": 6,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 40,
+        "x2": 10,
+        "y2": 40,
+        "ownerPath": 6,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 40,
+        "x2": 10,
+        "y2": 40,
+        "ownerPath": 6,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "x1": 10,
+        "y1": 40,
+        "x2": 20,
+        "y2": 40,
+        "ownerPath": 6,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      }
+    ],
+    "polylines": [
+      {
+        "points": [
+          [
+            10,
+            90
+          ],
+          [
+            10,
+            90
+          ],
+          [
+            10,
+            90
+          ],
+          [
+            10,
+            90
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            20,
+            80
+          ],
+          [
+            30,
+            80
+          ],
+          [
+            30,
+            80
+          ],
+          [
+            20,
+            80
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            40,
+            60
+          ],
+          [
+            40,
+            60
+          ],
+          [
+            40,
+            50
+          ],
+          [
+            40,
+            50
+          ],
+          [
+            40,
+            60
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            60,
+            40
+          ],
+          [
+            70,
+            40
+          ],
+          [
+            70,
+            30
+          ],
+          [
+            60,
+            30
+          ],
+          [
+            60,
+            40
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            80,
+            20
+          ],
+          [
+            70,
+            20
+          ],
+          [
+            70,
+            30
+          ],
+          [
+            80,
+            30
+          ],
+          [
+            80,
+            20
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            10,
+            40
+          ],
+          [
+            10,
+            40
+          ],
+          [
+            10,
+            40
+          ],
+          [
+            10,
+            40
+          ],
+          [
+            10,
+            40
+          ],
+          [
+            20,
+            40
+          ]
+        ],
+        "closed": true
+      }
+    ],
+    "paths": [
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 10,
+            "y": 90
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 90
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 90
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 90
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 20,
+            "y": 80
+          },
+          {
+            "kind": "lineto",
+            "x": 30,
+            "y": 80
+          },
+          {
+            "kind": "lineto",
+            "x": 30,
+            "y": 80
+          },
+          {
+            "kind": "lineto",
+            "x": 20,
+            "y": 80
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 40,
+            "y": 60
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 60
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 50
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 50
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 60,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 70,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 70,
+            "y": 30
+          },
+          {
+            "kind": "lineto",
+            "x": 60,
+            "y": 30
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 80,
+            "y": 20
+          },
+          {
+            "kind": "lineto",
+            "x": 70,
+            "y": 20
+          },
+          {
+            "kind": "lineto",
+            "x": 70,
+            "y": 30
+          },
+          {
+            "kind": "lineto",
+            "x": 80,
+            "y": 30
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 10,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 40
+          },
+          {
+            "kind": "close"
+          },
+          {
+            "kind": "lineto",
+            "x": 10,
+            "y": 40
+          },
+          {
+            "kind": "lineto",
+            "x": 20,
+            "y": 40
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0.5,
+        "paint": "stroke",
+        "colorSpace": "DeviceGray",
+        "strokeColor": [
+          0
+        ],
+        "alpha": 1
+      }
+    ],
+    "textSpans": null,
+    "source": "vector"
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 842,
+    "heightPts": 595.219970703125,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "! �",
+        "x0": 13.802300453186035,
+        "y0": 577.3909912109375,
+        "x1": 17.313039779663086,
+        "y1": 581.3826904296875,
+        "fontSize": 3.8567981719970703,
+        "fontName": "FCEPIQ+ArialNarrow,Bold"
+      }
+    ],
+    "source": "vector"
+  }
+]

@@ -75,6 +75,11 @@ impl<'lib> Bitmap<'lib> {
     /// 24-bit and 32-bit targets through different paths, so a consumer matching
     /// another renderer's pixels byte for byte has to pick the same format it used.
     /// `buffer()`/`stride()` follow the format: 3 bytes per pixel for BGR.
+    ///
+    /// # Safety
+    ///
+    /// The caller must keep the PDFium library lock alive for the returned
+    /// bitmap's lifetime and pass a pixel format supported by PDFium.
     pub unsafe fn new_with_format(
         width: i32,
         height: i32,
@@ -160,7 +165,7 @@ impl<'lib> Bitmap<'lib> {
 
         for y in 0..height {
             let row = &src[y * stride..y * stride + width * 4];
-            for pixel in row.chunks_exact(4) {
+            for pixel in row.as_chunks::<4>().0 {
                 // BGRA -> RGBA
                 rgba.push(pixel[2]); // R
                 rgba.push(pixel[1]); // G
@@ -183,7 +188,7 @@ impl<'lib> Bitmap<'lib> {
 
         for y in 0..height {
             let row = &src[y * stride..y * stride + width * 4];
-            for pixel in row.chunks_exact(4) {
+            for pixel in row.as_chunks::<4>().0 {
                 // BGRA -> RGB (drop A)
                 rgb.push(pixel[2]); // R
                 rgb.push(pixel[1]); // G
@@ -205,7 +210,7 @@ impl<'lib> Bitmap<'lib> {
 
         for y in 0..height {
             let row = &src[y * stride..y * stride + width * 4];
-            for pixel in row.chunks_exact(4) {
+            for pixel in row.as_chunks::<4>().0 {
                 let (b, g, r) = (pixel[0] as u32, pixel[1] as u32, pixel[2] as u32);
                 luma.push(((77 * r + 150 * g + 29 * b) >> 8) as u8);
             }

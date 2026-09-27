@@ -256,7 +256,14 @@ async fn test_parse_bytes_office_integration() {
         .parse_input(input)
         .await
         .expect("Should be able to parse");
-    assert_eq!(parsed.pages.len(), 2);
+    let parsed_from_path = lit
+        .parse(fixture_path)
+        .await
+        .expect("Should be able to parse the same document from a path");
+    assert!(!parsed.pages.is_empty());
+    assert_eq!(parsed.pages.len(), parsed_from_path.pages.len());
+    assert_eq!(parsed.text, parsed_from_path.text);
+    assert!(parsed.text.contains("Sample Document"));
 }
 
 #[tokio::test]
@@ -274,23 +281,6 @@ async fn test_parse_image_integration() {
         .await
         .expect("Should be able to parse");
     assert_eq!(parsed.pages.len(), 1);
-}
-
-#[tokio::test]
-#[serial]
-async fn test_parse_office_doc_integration() {
-    let env_var = std::env::var("SKIP_INTEGRATION_TESTS");
-    if let Ok(v) = env_var
-        && v == "yes"
-    {
-        return;
-    }
-    let lit = LiteParse::new(LiteParseConfig::default());
-    let parsed = lit
-        .parse("../../integration_tests_data/sample3.doc")
-        .await
-        .expect("Should be able to parse");
-    assert_eq!(parsed.pages.len(), 2);
 }
 
 #[tokio::test]

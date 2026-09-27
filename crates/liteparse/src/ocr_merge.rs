@@ -79,6 +79,8 @@ pub struct OcrRenderOptions {
     pub max_rasters: usize,
     /// Requested render resolution; clamped per page by the long-edge cap.
     pub dpi: f32,
+    /// Maximum long edge in pixels, after reducing the requested DPI.
+    pub max_long_edge_px: u32,
     /// Emit 1 byte/px luma instead of RGB (see `OcrEngine::prefers_grayscale`).
     pub grayscale: bool,
     /// Paint form-field appearances into the raster (runs document actions).
@@ -101,6 +103,7 @@ impl Default for OcrRenderOptions {
         Self {
             max_rasters: 0,
             dpi: crate::config::DEFAULT_DPI,
+            max_long_edge_px: crate::config::DEFAULT_OCR_MAX_LONG_EDGE_PX,
             grayscale: false,
             render_form_fields: false,
             continue_on_page_error: false,
@@ -657,10 +660,6 @@ fn count_columns(region: &Region, total_items: usize) -> usize {
     }
 }
 
-/// Cap on the rendered long edge (in pixels) for OCR page rasters
-/// to avoid excessive memory usage.
-pub(crate) const MAX_OCR_RENDER_LONG_EDGE_PX: f32 = 4096.0;
-
 /// Render the pages in `pages[start..]` that need OCR from an already-open
 /// document, stopping once `options.max_rasters` of them have been rendered.
 /// Returns the rasters plus the index to resume scanning from, so a caller
@@ -677,6 +676,7 @@ pub fn render_pages_for_ocr(
     let OcrRenderOptions {
         max_rasters,
         dpi,
+        max_long_edge_px,
         grayscale,
         render_form_fields,
         continue_on_page_error,
@@ -756,7 +756,7 @@ pub fn render_pages_for_ocr(
             let long_edge_pt = page.page_width.max(page.page_height);
             let mut eff_dpi = dpi;
             if long_edge_pt > 0.0 {
-                let max_dpi = MAX_OCR_RENDER_LONG_EDGE_PX * 72.0 / long_edge_pt;
+                let max_dpi = *max_long_edge_px as f32 * 72.0 / long_edge_pt;
                 if eff_dpi > max_dpi {
                     eff_dpi = max_dpi;
                 }
@@ -860,12 +860,13 @@ pub async fn recognize_rasters(
     num_workers: usize,
 ) -> Vec<PageOcrOutcome> {
     type OcrTaskResult = Result<Vec<OcrResult>, Box<dyn std::error::Error + Send + Sync>>;
+    type OcrPageTaskResult = (usize, f32, (bool, Vec<Rect>), OcrTaskResult);
 
     // Browser WASM uses the JavaScript event loop. It has no Tokio runtime or
     // blocking thread pool. Run each JavaScript OCR callback directly so the
     // returned Promise can make progress on the browser event loop.
     #[cfg(target_arch = "wasm32")]
-    let task_results: Vec<(usize, f32, (bool, Vec<Rect>), OcrTaskResult)> = {
+    let task_results: Vec<OcrPageTaskResult> = {
         let _ = num_workers;
         let mut results = Vec::with_capacity(rendered.len());
         for r in rendered {
@@ -898,7 +899,7 @@ pub async fn recognize_rasters(
     // pass deadlocks. Acquiring the permit asynchronously parks the lightweight
     // task instead, so only `num_workers` blocking threads are ever consumed.
     #[cfg(not(target_arch = "wasm32"))]
-    let task_results: Vec<(usize, f32, (bool, Vec<Rect>), OcrTaskResult)> = {
+    let task_results: Vec<OcrPageTaskResult> = {
         let num_workers = num_workers.max(1);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(num_workers));
         let mut handles = Vec::with_capacity(rendered.len());
@@ -992,6 +993,8 @@ pub fn merge_ocr_results(
     pages: &mut [Page],
     outcomes: Vec<PageOcrOutcome>,
     ocr_failure_fatal: bool,
+    min_confidence: f32,
+    quiet: bool,
 ) -> Result<(), LiteParseError> {
     // Track OCR task outcomes so we can distinguish a systemic failure (e.g.
     // missing Tesseract language data, which fails identically on every page)
@@ -1092,7 +1095,12 @@ pub fn merge_ocr_results(
                 page_dpi
             );
         }
+        let mut dropped_confidence = 0usize;
         for r in &ocr_results {
+            if r.confidence < min_confidence {
+                dropped_confidence += 1;
+                continue;
+            }
             if r.confidence <= 0.1 {
                 continue;
             }
@@ -1207,6 +1215,11 @@ pub fn merge_ocr_results(
                 confidence: Some((r.confidence * 1000.0).round() / 1000.0),
                 ..Default::default()
             });
+        }
+        if !quiet && min_confidence > 0.0 {
+            eprintln!(
+                "[ocr] page {page_number}: dropped {dropped_confidence} item(s) below confidence {min_confidence}"
+            );
         }
     }
 
@@ -1486,30 +1499,29 @@ fn is_rule_artifact(text: &str, w: f32, h: f32) -> bool {
     }
     let mut chars = trimmed.chars();
     let (first, rest) = (chars.next(), chars.next());
-    if rest.is_none() {
-        if let Some(c) = first {
-            if matches!(
-                c,
-                '|' | 'I'
-                    | 'l'
-                    | '1'
-                    | '!'
-                    | 'i'
-                    | 'j'
-                    | '['
-                    | ']'
-                    | '('
-                    | ')'
-                    | '{'
-                    | '}'
-                    | '/'
-                    | '\\'
-            ) && h > 0.0
-                && w < RULE_ARTIFACT_MAX_ASPECT * h
-            {
-                return true;
-            }
-        }
+    if rest.is_none()
+        && let Some(c) = first
+        && matches!(
+            c,
+            '|' | 'I'
+                | 'l'
+                | '1'
+                | '!'
+                | 'i'
+                | 'j'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '/'
+                | '\\'
+        )
+        && h > 0.0
+        && w < RULE_ARTIFACT_MAX_ASPECT * h
+    {
+        return true;
     }
     false
 }
@@ -1675,7 +1687,10 @@ mod tests {
             mk("2016", 100.0, 240.0),
             mk("Fruit Production", 120.0, 105.0),
         ];
-        assert_eq!(chart_like_images(&[rect.clone()], &chart, 1.0), vec![true]);
+        assert_eq!(
+            chart_like_images(std::slice::from_ref(&rect), &chart, 1.0),
+            vec![true]
+        );
         // An infographic with sentences: not a chart.
         let prose = vec![
             mk("Wash your hands", 60.0, 110.0),
@@ -1683,7 +1698,10 @@ mod tests {
             mk("before every meal", 60.0, 150.0),
             mk("2020", 100.0, 240.0),
         ];
-        assert_eq!(chart_like_images(&[rect.clone()], &prose, 1.0), vec![false]);
+        assert_eq!(
+            chart_like_images(std::slice::from_ref(&rect), &prose, 1.0),
+            vec![false]
+        );
         // Too few results to judge.
         assert_eq!(chart_like_images(&[rect], &chart[..3], 1.0), vec![false]);
     }
@@ -2206,7 +2224,7 @@ mod tests {
         ocr_failure_fatal: bool,
     ) -> Result<(), LiteParseError> {
         let outcomes = recognize_rasters(rendered, engine, language, num_workers).await;
-        merge_ocr_results(pages, outcomes, ocr_failure_fatal)
+        merge_ocr_results(pages, outcomes, ocr_failure_fatal, 0.0, true)
     }
 
     // A page that already has substantial native text coverage, as would be the

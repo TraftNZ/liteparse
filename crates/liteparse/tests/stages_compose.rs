@@ -230,7 +230,7 @@ async fn compose(parser: &LiteParse, input: PdfInput) -> ParseResult {
         &parser.extract_request(target_pages.as_deref(), config.max_pages),
     )
     .unwrap();
-    let ocr_render_options = parser.ocr_render_options(grayscale, &extracted);
+    let ocr_render_options = parser.ocr_render_options(grayscale, &extracted).unwrap();
     let screenshot_options = parser.screenshot_options(config.continue_on_page_error);
     // Extraction may have flattened form widgets into the open document;
     // screenshots that paint form fields need a document it did not touch.
@@ -316,7 +316,7 @@ async fn compose(parser: &LiteParse, input: PdfInput) -> ParseResult {
             )
             .await;
             let outcomes = round_trip(outcomes, "Vec<PageOcrOutcome>");
-            stages::merge_ocr(&mut pages, outcomes, config.ocr_failure_fatal).unwrap();
+            stages::merge_ocr(&mut pages, outcomes, config.ocr_failure_fatal, 0.0, true).unwrap();
         }
     }
 
@@ -647,6 +647,89 @@ async fn render_for_ocr_selection_overrides_complexity_gate() {
     assert!(json["pixels"].is_string());
 }
 
+#[tokio::test]
+#[serial]
+async fn render_for_ocr_clamps_only_pages_above_the_configured_cap() {
+    const REQUESTED_DPI: f32 = 144.0;
+    const SMALL_CAP: u32 = 128;
+    const LARGE_CAP: u32 = 4096;
+    const POINTS_PER_INCH: f32 = 72.0;
+    let parser = LiteParse::new(everything_config());
+    let lib = Library::init();
+    let document = stages::open(&lib, &PdfInput::Path(fixture("sample.pdf")), None, &[]).unwrap();
+    let pages = stages::extract(&document, &parser.extract_request(None, usize::MAX))
+        .unwrap()
+        .pages;
+    let first = &pages[0];
+    let long_edge = first.page_width.max(first.page_height);
+    let requested_pixels = long_edge * REQUESTED_DPI / POINTS_PER_INCH;
+    assert!(requested_pixels > SMALL_CAP as f32 && requested_pixels < LARGE_CAP as f32);
+    for cap in [SMALL_CAP, LARGE_CAP] {
+        let options = stages::OcrRenderOptions {
+            selection: Some([first.page_number as u32].into_iter().collect()),
+            dpi: REQUESTED_DPI,
+            max_long_edge_px: cap,
+            ..stages::OcrRenderOptions::default()
+        };
+        let (rasters, _) = stages::render_for_ocr(&document, &pages, 0, &options).unwrap();
+        assert_eq!(rasters.len(), 1);
+        let raster = &rasters[0];
+        if cap == SMALL_CAP {
+            assert_eq!(raster.width.max(raster.height), SMALL_CAP);
+            assert_eq!(raster.dpi, SMALL_CAP as f32 * POINTS_PER_INCH / long_edge);
+        } else {
+            assert_eq!(raster.dpi, REQUESTED_DPI);
+            assert_eq!(
+                raster.width.max(raster.height),
+                requested_pixels.ceil() as u32
+            );
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_ocr_applies_the_confidence_floor_to_recognized_items() {
+    const LOW_CONFIDENCE: f32 = 0.12;
+    const HIGH_CONFIDENCE: f32 = 0.95;
+    const CONFIDENCE_FLOOR: f32 = 0.5;
+    const POINTS_DPI: f32 = 72.0;
+    let parser = LiteParse::new(everything_config());
+    let lib = Library::init();
+    let document = stages::open(&lib, &PdfInput::Path(fixture("sample.pdf")), None, &[]).unwrap();
+    let mut pages = stages::extract(&document, &parser.extract_request(None, usize::MAX))
+        .unwrap()
+        .pages;
+    let page = &mut pages[0];
+    page.text_items.clear();
+    let outcome = stages::PageOcrOutcome {
+        page_number: page.page_number,
+        dpi: POINTS_DPI,
+        has_native_text: false,
+        image_rects: Vec::new(),
+        results: vec![
+            OcrResult {
+                text: "low confidence".into(),
+                bbox: [20.0, 20.0, 120.0, 40.0],
+                confidence: LOW_CONFIDENCE,
+                polygon: None,
+            },
+            OcrResult {
+                text: "high confidence".into(),
+                bbox: [20.0, 60.0, 120.0, 80.0],
+                confidence: HIGH_CONFIDENCE,
+                polygon: None,
+            },
+        ],
+        error: None,
+    };
+    stages::merge_ocr(&mut pages, vec![outcome], false, CONFIDENCE_FLOOR, true).unwrap();
+    assert_eq!(pages[0].text_items.len(), 1);
+    assert_eq!(pages[0].text_items[0].text, "high confidence");
+    assert_eq!(pages[0].text_items[0].font_name.as_deref(), Some("OCR"));
+    assert_eq!(pages[0].text_items[0].confidence, Some(HIGH_CONFIDENCE));
+}
+
 /// A hand-built outcome for a page that is not being merged is an error,
 /// not a panic.
 #[test]
@@ -665,7 +748,7 @@ fn merge_ocr_rejects_outcome_for_unknown_page() {
         }],
         error: None,
     };
-    let err = stages::merge_ocr(&mut pages, vec![outcome], false).unwrap_err();
+    let err = stages::merge_ocr(&mut pages, vec![outcome], false, 0.0, true).unwrap_err();
     assert!(err.to_string().contains("page 7"), "{err}");
 }
 

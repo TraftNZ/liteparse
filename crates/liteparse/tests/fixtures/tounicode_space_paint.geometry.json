@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 595,
+    "heightPts": 842,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "1",
+        "x0": 40,
+        "y0": 71.39599609375,
+        "x1": 48.23037338256836,
+        "y1": 82.13600158691406,
+        "fontSize": 10.97670602798462,
+        "fontName": "CFGLKJ+Arial,Bold"
+      }
+    ],
+    "source": "vector"
+  }
+]

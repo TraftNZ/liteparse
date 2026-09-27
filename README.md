@@ -276,6 +276,13 @@ lit parse document.pdf --target-pages "1-5,10,15-20"
 # Parse without OCR
 lit parse document.pdf --no-ocr
 
+# OCR selected pages with local PP-OCRv6 ONNX models (build with --features oar-ocr)
+lit parse document.pdf --format json --target-pages '2,5-7' --ocr-pages '2,5-7' \
+  --ocr-engine oar --oar-det-model models/det.onnx \
+  --oar-rec-model models/rec.onnx --oar-dict models/ppocrv6_dict.txt \
+  --oar-threads 2 --oar-tile-px 960 --oar-tile-overlap-px 96 \
+  --ocr-min-confidence 0.5 --ocr-max-long-edge-px 8192
+
 # Include page-scoped vector path data in JSON
 lit parse document.pdf --format json --extract-vector-graphics
 
@@ -291,6 +298,67 @@ lit parse document.pdf --format json --extract-form-fields
 # Parse a remote PDF
 curl -sL https://example.com/report.pdf | lit parse -
 ```
+
+`--ocr-engine` accepts `tesseract`, `oar`, or `http`. The `oar` backend needs all
+three model paths. `--oar-det-limit-side-len` controls detector resizing for
+whole images or each tile. Tiled OCR joins up to three consecutive, aligned
+word lines before page text projection. `--ocr-pages` uses 1-based ranges and must be a
+subset of `--target-pages` when both are set. OCR confidence filtering applies
+to recognized items before they are merged with native text. The long-edge cap
+defaults to 4096 pixels. Tiling uses page-pixel coordinates, then returns OCR
+boxes in PDF points.
+
+### PDF operations
+
+`lit pdf` reads one versioned JSON request from standard input and writes one
+JSON response to standard output. Errors and diagnostics go to standard error;
+request or document errors exit nonzero. All page numbers are 1-based. Raster
+data is base64 inside `data`, with `mime_type`, `page_number`, and
+`effective_dpi` (for rendered pages). Bounds use top-left page fractions.
+
+```bash
+printf '%s' '{"version":1,"operation":"page_count","pdf_path":"document.pdf"}' | lit pdf
+printf '%s' '{"version":1,"operation":"render_pages","pdf_path":"document.pdf","page_numbers":[1,3],"dpi":150}' | lit pdf
+printf '%s' '{"version":1,"operation":"native_clip","pdf_path":"document.pdf","page_number":1,"rect":[0.4,0.4,0.1,0.1],"dpi":200}' | lit pdf
+```
+
+The image/text `operation` values are `page_count`, `render_pages`, `page_info`,
+`render_crop`, `render_scale`, `native_clip`, and `extract_images`. The three
+single-page render operations use `page_number`; `render_crop` and `native_clip`
+also require `rect: [x, y, width, height]`. `render_scale` defaults to 150 DPI;
+other renders default to 300 DPI. All responses contain `version` and
+`total_pages`; depending on the operation they also contain `page_info`,
+`image`, or `images`. `extract_images` returns PNG source pixels with normalized
+`x`, `y`, `width`, `height`, and `has_alpha` for each image object.
+
+PDF page and clip renders use JPEG quality 80 with averaged 4:2:0 chroma
+subsampling. Source image extraction remains PNG with alpha where present.
+The PDF JPEG encoder preserves the reference helper's Go 1.27 color conversion,
+edge padding, transform and quantization rounding. Its BSD license is in
+`crates/liteparse/licenses/Go-JPEG-LICENSE`.
+
+The fork also supports `operation: "geometry"`. It returns a JSON array of
+page previews, with point coordinates measured from the top-left of the page.
+Previews and full artifacts use extractor generation 9 (`version: 9`), separate
+from the PDF request schema version 1. Consumers must keep cached artifacts
+from earlier extractor generations separate.
+It accepts `page_number` or `page_numbers`; omitting both selects all pages.
+The optional `geometry` object accepts `raster_dpi` (default 300), `no_raster`,
+`force_raster`, `relations`, `artifact_out`, and `summary`. Its `preview` object
+accepts `min_length_pts`, `max_segments`, `max_text_spans`, `bbox_frac`
+(`[x0,y0,x1,y1]` fractions), and `no_text`.
+
+```bash
+printf '%s' '{"version":1,"operation":"geometry","pdf_path":"drawing.pdf","page_numbers":[1],"geometry":{"relations":true,"artifact_out":"drawing.geometry.json","preview":{"max_segments":300,"max_text_spans":2000}}}' | lit pdf
+```
+
+Previews keep indices into the original segment/polyline arrays and have
+independent hard caps of 1,000 segments/polylines and 5,000 text spans per page.
+Stdout is limited to 20 MiB. The full artifact remains uncapped by those preview
+filters, streams one page at a time, and is atomically published with a 2 GiB
+size limit. `summary: true` writes text summaries instead of preview JSON.
+Geometry is a fork extension. Raster traces depend on PDFium's rendering rules
+and may differ from traces produced by other PDF engines.
 
 ### Markdown Output
 

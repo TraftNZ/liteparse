@@ -1,0 +1,45 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "Exist. Warehouse",
+        "x0": 40,
+        "y0": 32.17973709106445,
+        "x1": 88.24846649169922,
+        "y1": 42.15974807739258,
+        "fontSize": 7.058000087738037,
+        "fontName": "YGXUST+CIDFont+F2"
+      },
+      {
+        "text": "Exist. Warehouse",
+        "x0": 40.00600051879883,
+        "y0": 32.17973709106445,
+        "x1": 88.25447082519531,
+        "y1": 42.15974807739258,
+        "fontSize": 7.058000087738037,
+        "fontName": "YGXUST+CIDFont+F2"
+      },
+      {
+        "text": "Exist. Warehouse",
+        "x0": 40,
+        "y0": 72.17973327636719,
+        "x1": 88.24846649169922,
+        "y1": 82.15974426269531,
+        "fontSize": 7.058000087738037,
+        "fontName": "YGXUST+CIDFont+F2"
+      }
+    ],
+    "source": "vector"
+  }
+]

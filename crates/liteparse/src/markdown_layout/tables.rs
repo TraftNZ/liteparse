@@ -910,14 +910,14 @@ fn split_span_at_anchors(
 /// cells), so it's computed at the call site and passed in.
 fn finalize_table_run(
     lines: &[ProjectedLine],
-    start_idx: usize,
-    floor: usize,
+    header_scan: (usize, usize),
     rows: &[(usize, &ProjectedLine, Vec<TableCell>)],
     track_ranges: &[(f32, f32)],
     column_count: usize,
     end: usize,
     bold_first_row_eligible: bool,
 ) -> Option<TableRun> {
+    let (start_idx, floor) = header_scan;
     // Walk back above the detected body and absorb header lines that align to
     // the same column tracks but weren't includable as body rows (merged /
     // partial header cells). Multiple wrapped header lines collapse into one
@@ -1172,8 +1172,7 @@ fn try_detect_table_inferred(
     let bold_eligible = rows[0].2.iter().all(|c| c.bold && !c.text.is_empty());
     let run = finalize_table_run(
         lines,
-        body_start,
-        floor,
+        (body_start, floor),
         &rows,
         &track_ranges,
         column_count,
@@ -1439,8 +1438,7 @@ fn try_detect_table(lines: &[ProjectedLine], start_idx: usize, floor: usize) -> 
     let bold_eligible = rows[0].2.iter().all(|c| c.bold);
     finalize_table_run(
         lines,
-        start_idx,
-        floor,
+        (start_idx, floor),
         &rows,
         &track_ranges,
         column_count,
@@ -1760,7 +1758,7 @@ pub(crate) fn validated_ruled_table_rects(
                 x1 = x1.max(b.x + b.width);
                 y1 = y1.max(b.y + b.height);
             }
-            (x1 > x0 && y1 > y0).then(|| Rect {
+            (x1 > x0 && y1 > y0).then_some(Rect {
                 x: x0,
                 y: y0,
                 width: x1 - x0,
@@ -3698,7 +3696,7 @@ fn assign_cells(
                     "[ruled]   skip-overhang row={row} x={line_x0:.0}..{line_x1:.0} grid={:.0}..{:.0} text={:?}",
                     xs[0],
                     xs[n_cols],
-                    &line.text.chars().take(60).collect::<String>()
+                    line.text.chars().take(60).collect::<String>()
                 );
             }
             continue;
@@ -3912,12 +3910,12 @@ fn merge_stacked_header(
     cells: Vec<Vec<Cell>>,
     cell_has_text: Vec<Vec<bool>>,
     cell_is_bold: Vec<Vec<bool>>,
-    n_rows: usize,
-    n_cols: usize,
+    dimensions: (usize, usize),
     kept_row_heights: &[f32],
     flattened: bool,
     dbg: bool,
 ) -> (Vec<Vec<Cell>>, Vec<Vec<bool>>, Vec<Vec<bool>>, usize, bool) {
+    let (n_rows, n_cols) = dimensions;
     let row_fill =
         |r: usize, has: &[Vec<bool>]| has[r].iter().filter(|t| **t).count() as f32 / n_cols as f32;
     // Anchor on the first fully-dense row (the first real data row).
@@ -4057,12 +4055,12 @@ fn passes_density_gate(
     cells: &[Vec<Cell>],
     cell_has_text: &[Vec<bool>],
     cell_is_bold: &[Vec<bool>],
-    n_rows: usize,
-    n_cols: usize,
+    dimensions: (usize, usize),
     flattened: bool,
     spanned: &[Vec<bool>],
     dbg: bool,
 ) -> bool {
+    let (n_rows, n_cols) = dimensions;
     let total = n_rows * n_cols;
     // A spanned cell only excuses itself when the cell it is merged into
     // actually holds text. Walk up the run of merged cells to its head: an
@@ -4314,10 +4312,10 @@ fn build_ruled_table(
     h_indices: &[usize],
     v_indices: &[usize],
     lines: &[ProjectedLine],
-    page_width: f32,
-    page_height: f32,
+    page_size: (f32, f32),
     pass: RuledPass,
 ) -> Option<(TableRun, Vec<usize>)> {
+    let (page_width, page_height) = page_size;
     let base = build_ruled_table_from(
         hs,
         vs,
@@ -4553,8 +4551,7 @@ fn build_ruled_table_from(
         cells,
         cell_has_text,
         cell_is_bold,
-        n_rows,
-        n_cols,
+        (n_rows, n_cols),
         &kept_row_heights,
         flattened_header.is_some(),
         dbg,
@@ -4576,8 +4573,7 @@ fn build_ruled_table_from(
         &cells,
         &cell_has_text,
         &cell_is_bold,
-        n_rows,
-        n_cols,
+        (n_rows, n_cols),
         flattened_header.is_some(),
         &spanned,
         dbg,
@@ -4909,8 +4905,7 @@ fn detect_ruled_tables_impl(
                 &band.h_idx,
                 &band.v_idx,
                 lines,
-                page_width,
-                page_height,
+                (page_width, page_height),
                 pass,
             ) {
                 out.push(run);
@@ -5073,25 +5068,25 @@ fn merge_continuation_rows(rows: &mut Vec<Vec<Cell>>) {
     }
     let mut out: Vec<Vec<Cell>> = Vec::with_capacity(rows.len());
     for row in rows.drain(..) {
-        if let Some(prev) = out.last_mut() {
-            if is_continuation_row(prev, &row) {
-                for (i, cell) in row.iter().enumerate() {
-                    let t = cell.text.trim();
-                    if t.is_empty() {
-                        continue;
-                    }
-                    // `prev[i]` is non-empty for every filled column of `row`;
-                    // that is the subset rule `is_continuation_row` enforces.
-                    prev[i].text.push(' ');
-                    prev[i].text.push_str(t);
-                    // The wrapped line is part of the same logical cell, so it
-                    // grows that cell's box down to cover the continuation.
-                    if let Some(r) = &cell.bbox {
-                        Rect::extend(&mut prev[i].bbox, r);
-                    }
+        if let Some(prev) = out.last_mut()
+            && is_continuation_row(prev, &row)
+        {
+            for (i, cell) in row.iter().enumerate() {
+                let t = cell.text.trim();
+                if t.is_empty() {
+                    continue;
                 }
-                continue;
+                // `prev[i]` is non-empty for every filled column of `row`;
+                // that is the subset rule `is_continuation_row` enforces.
+                prev[i].text.push(' ');
+                prev[i].text.push_str(t);
+                // The wrapped line is part of the same logical cell, so it
+                // grows that cell's box down to cover the continuation.
+                if let Some(r) = &cell.bbox {
+                    Rect::extend(&mut prev[i].bbox, r);
+                }
             }
+            continue;
         }
         out.push(row);
     }

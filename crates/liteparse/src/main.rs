@@ -8,6 +8,9 @@ use liteparse::parser::LiteParse;
 use liteparse::render;
 use liteparse::types::PdfInput;
 
+mod pdf_jpeg;
+mod pdf_ops;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "lit",
@@ -21,6 +24,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Run a versioned JSON PDF request from standard input.
+    Pdf,
     /// Parse a document file (PDF, DOCX, XLSX, PPTX, images, etc.)
     Parse(ParseCommand),
     /// Generate screenshots of document pages (PDF, DOCX, XLSX, images, etc.)
@@ -35,6 +40,36 @@ enum Commands {
     /// Extract embedded image bounding boxes from a page [dev tool]
     #[command(hide = true)]
     ImageBounds(ExtractCommand),
+}
+
+#[derive(Args, Debug)]
+struct OcrBackendArgs {
+    /// OCR engine: tesseract, oar, or http. Default is HTTP when a server URL is set, else Tesseract.
+    #[arg(long)]
+    ocr_engine: Option<String>,
+    #[arg(long)]
+    oar_det_model: Option<String>,
+    #[arg(long)]
+    oar_rec_model: Option<String>,
+    #[arg(long)]
+    oar_dict: Option<String>,
+    #[arg(long)]
+    oar_threads: Option<usize>,
+    #[arg(long)]
+    oar_det_limit_side_len: Option<u32>,
+    #[arg(long)]
+    oar_tile_px: Option<u32>,
+    #[arg(long)]
+    oar_tile_overlap_px: Option<u32>,
+    /// 1-based pages to OCR, using the same range syntax as --target-pages.
+    #[arg(long)]
+    ocr_pages: Option<String>,
+    /// Drop OCR items below this confidence (0 disables filtering).
+    #[arg(long, default_value = "0")]
+    ocr_min_confidence: f32,
+    /// Cap the long edge of a page raster used for OCR.
+    #[arg(long, default_value_t = liteparse::config::DEFAULT_OCR_MAX_LONG_EDGE_PX)]
+    ocr_max_long_edge_px: u32,
 }
 
 #[derive(Args, Debug)]
@@ -61,6 +96,9 @@ struct ParseCommand {
     /// HTTP OCR server URL (uses Tesseract if not provided)
     #[arg(long, default_value = None)]
     ocr_server_url: Option<String>,
+
+    #[command(flatten)]
+    ocr_options: OcrBackendArgs,
 
     /// Extra header for OCR server requests, "Name: Value" (repeatable).
     /// e.g. --ocr-server-header "Authorization: Bearer <token>"
@@ -221,6 +259,9 @@ struct BatchParseCommand {
     /// HTTP OCR server URL (uses Tesseract if not provided)
     #[arg(long, default_value = None)]
     ocr_server_url: Option<String>,
+
+    #[command(flatten)]
+    ocr_options: OcrBackendArgs,
 
     /// Extra header for OCR server requests, "Name: Value" (repeatable).
     /// e.g. --ocr-server-header "Authorization: Bearer <token>"
@@ -414,6 +455,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Pdf => pdf_ops::run()?,
         Commands::Parse(cmd) => {
             let format = parse_output_format(&cmd.format)?;
             let image_mode = parse_image_mode(&cmd.image_mode)?;
@@ -431,6 +473,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 password: cmd.password,
                 quiet: cmd.quiet,
                 ocr_server_url: cmd.ocr_server_url,
+                ocr_engine: cmd.ocr_options.ocr_engine,
+                oar_det_model: cmd.ocr_options.oar_det_model,
+                oar_rec_model: cmd.ocr_options.oar_rec_model,
+                oar_dict: cmd.ocr_options.oar_dict,
+                oar_threads: cmd.ocr_options.oar_threads,
+                oar_det_limit_side_len: cmd.ocr_options.oar_det_limit_side_len,
+                oar_tile_px: cmd.ocr_options.oar_tile_px,
+                oar_tile_overlap_px: cmd.ocr_options.oar_tile_overlap_px,
+                ocr_pages: cmd.ocr_options.ocr_pages,
+                ocr_min_confidence: cmd.ocr_options.ocr_min_confidence,
+                ocr_max_long_edge_px: cmd.ocr_options.ocr_max_long_edge_px,
                 ocr_server_headers: cmd.ocr_server_headers,
                 image_mode,
                 extract_images: cmd.extract_images,
@@ -537,6 +590,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 password: cmd.password,
                 quiet: cmd.quiet,
                 ocr_server_url: cmd.ocr_server_url,
+                ocr_engine: cmd.ocr_options.ocr_engine,
+                oar_det_model: cmd.ocr_options.oar_det_model,
+                oar_rec_model: cmd.ocr_options.oar_rec_model,
+                oar_dict: cmd.ocr_options.oar_dict,
+                oar_threads: cmd.ocr_options.oar_threads,
+                oar_det_limit_side_len: cmd.ocr_options.oar_det_limit_side_len,
+                oar_tile_px: cmd.ocr_options.oar_tile_px,
+                oar_tile_overlap_px: cmd.ocr_options.oar_tile_overlap_px,
+                ocr_pages: cmd.ocr_options.ocr_pages,
+                ocr_min_confidence: cmd.ocr_options.ocr_min_confidence,
+                ocr_max_long_edge_px: cmd.ocr_options.ocr_max_long_edge_px,
                 ocr_server_headers: cmd.ocr_server_headers,
                 include_complexity: cmd.complexity,
                 extract_text_metadata: cmd.extract_text_metadata,

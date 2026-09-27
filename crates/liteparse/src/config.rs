@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Default pixel cap for an OCR page raster's long edge.
+pub const DEFAULT_OCR_MAX_LONG_EDGE_PX: u32 = 4096;
+
 /// Configuration for LiteParse document parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteParseConfig {
@@ -9,6 +12,37 @@ pub struct LiteParseConfig {
     pub ocr_enabled: bool,
     /// HTTP OCR server URL (uses Tesseract if not provided)
     pub ocr_server_url: Option<String>,
+    /// Explicit OCR backend. None keeps the URL-or-Tesseract default.
+    #[serde(default)]
+    pub ocr_engine: Option<String>,
+    /// Local model artifacts for the optional oar-ocr backend.
+    #[serde(default)]
+    pub oar_det_model: Option<String>,
+    #[serde(default)]
+    pub oar_rec_model: Option<String>,
+    #[serde(default)]
+    pub oar_dict: Option<String>,
+    /// ONNX Runtime intra-op threads for the oar-ocr backend.
+    #[serde(default)]
+    pub oar_threads: Option<usize>,
+    /// Detector long-edge limit. None preserves the oar-ocr default.
+    #[serde(default)]
+    pub oar_det_limit_side_len: Option<u32>,
+    /// Optional square OCR tile edge in pixels.
+    #[serde(default)]
+    pub oar_tile_px: Option<u32>,
+    /// Shared edge between adjacent OCR tiles.
+    #[serde(default)]
+    pub oar_tile_overlap_px: Option<u32>,
+    /// Minimum accepted OCR confidence, in the closed interval [0, 1].
+    #[serde(default)]
+    pub ocr_min_confidence: f32,
+    /// Explicit 1-based OCR selection, independent of parsed target pages.
+    #[serde(default)]
+    pub ocr_pages: Option<String>,
+    /// Maximum raster long edge for OCR; the default preserves 4096 pixels.
+    #[serde(default = "default_ocr_max_long_edge_px")]
+    pub ocr_max_long_edge_px: u32,
     /// Extra HTTP headers sent with every request to `ocr_server_url`, as
     /// `(name, value)` pairs. Use for auth, e.g. `("Authorization", "Bearer …")`.
     /// Ignored when `ocr_server_url` is None.
@@ -269,6 +303,17 @@ impl Default for LiteParseConfig {
             // never silently swallowed.
             ocr_enabled: cfg!(feature = "tesseract"),
             ocr_server_url: None,
+            ocr_engine: None,
+            oar_det_model: None,
+            oar_rec_model: None,
+            oar_dict: None,
+            oar_threads: None,
+            oar_det_limit_side_len: None,
+            oar_tile_px: None,
+            oar_tile_overlap_px: None,
+            ocr_min_confidence: 0.0,
+            ocr_pages: None,
+            ocr_max_long_edge_px: default_ocr_max_long_edge_px(),
             ocr_server_headers: Vec::new(),
             tessdata_path: None,
             max_pages: 1000,
@@ -309,6 +354,10 @@ impl Default for LiteParseConfig {
 }
 
 /// Returns the default number of OCR workers: CPU cores - 1, minimum 1.
+fn default_ocr_max_long_edge_px() -> u32 {
+    DEFAULT_OCR_MAX_LONG_EDGE_PX
+}
+
 fn default_num_workers() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(1).max(1))

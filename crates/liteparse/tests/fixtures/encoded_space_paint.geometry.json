@@ -1,0 +1,27 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 595.3200073242188,
+    "heightPts": 842.0399780273438,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "4.2.1 SK 1",
+        "x0": 113.30000305175781,
+        "y0": 213.6199951171875,
+        "x1": 169.1000213623047,
+        "y1": 227.47999572753906,
+        "fontSize": 12,
+        "fontName": "BCDEEE+Calibri-Light"
+      }
+    ],
+    "source": "vector"
+  }
+]

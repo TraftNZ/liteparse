@@ -1,0 +1,28 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 842,
+    "heightPts": 595.219970703125,
+    "class": "text",
+    "pathOps": 0,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [],
+    "polylines": [],
+    "paths": [],
+    "textSpans": [
+      {
+        "text": "����������",
+        "x0": 769.8403930664062,
+        "y0": 374.4896240234375,
+        "x1": 803.7828979492188,
+        "y1": 395.71099853515625,
+        "fontSize": 6.481523036956787,
+        "fontName": "VIRIBR+Arial",
+        "rotation": 25.998991967398915
+      }
+    ],
+    "source": "vector"
+  }
+]

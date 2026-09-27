@@ -1,0 +1,513 @@
+[
+  {
+    "version": 8,
+    "page": 1,
+    "widthPts": 200,
+    "heightPts": 200,
+    "class": "mixed",
+    "pathOps": 3,
+    "imageOps": 0,
+    "imageCoverage": 0,
+    "segments": [
+      {
+        "x1": 40,
+        "y1": 160,
+        "x2": 120,
+        "y2": 160,
+        "ownerPath": 1,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "fillPatternId": "P1"
+      },
+      {
+        "x1": 120,
+        "y1": 160,
+        "x2": 120,
+        "y2": 80,
+        "ownerPath": 1,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "fillPatternId": "P1"
+      },
+      {
+        "x1": 120,
+        "y1": 80,
+        "x2": 40,
+        "y2": 80,
+        "ownerPath": 1,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "fillPatternId": "P1"
+      },
+      {
+        "x1": 40,
+        "y1": 80,
+        "x2": 40,
+        "y2": 160,
+        "ownerPath": 1,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "fillPatternId": "P1"
+      },
+      {
+        "x1": 40,
+        "y1": 160,
+        "x2": 48,
+        "y2": 160,
+        "ownerPath": 2,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          40,
+          80,
+          120,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 48,
+        "y1": 160,
+        "x2": 48,
+        "y2": 152,
+        "ownerPath": 2,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          40,
+          80,
+          120,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 48,
+        "y1": 152,
+        "x2": 40,
+        "y2": 152,
+        "ownerPath": 2,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          40,
+          80,
+          120,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 40,
+        "y1": 152,
+        "x2": 40,
+        "y2": 160,
+        "ownerPath": 2,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          40,
+          80,
+          120,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 40,
+        "y1": 160,
+        "x2": 48,
+        "y2": 160,
+        "ownerPath": 3,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "colorSpace": "DeviceRGB",
+        "fillColor": [
+          1,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 2,
+        "clipBBox": [
+          40,
+          152,
+          48,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 48,
+        "y1": 160,
+        "x2": 48,
+        "y2": 152,
+        "ownerPath": 3,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "colorSpace": "DeviceRGB",
+        "fillColor": [
+          1,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 2,
+        "clipBBox": [
+          40,
+          152,
+          48,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 48,
+        "y1": 152,
+        "x2": 40,
+        "y2": 152,
+        "ownerPath": 3,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "colorSpace": "DeviceRGB",
+        "fillColor": [
+          1,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 2,
+        "clipBBox": [
+          40,
+          152,
+          48,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "x1": 40,
+        "y1": 152,
+        "x2": 40,
+        "y2": 160,
+        "ownerPath": 3,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "colorSpace": "DeviceRGB",
+        "fillColor": [
+          1,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 2,
+        "clipBBox": [
+          40,
+          152,
+          48,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      }
+    ],
+    "polylines": [
+      {
+        "points": [
+          [
+            40,
+            160
+          ],
+          [
+            120,
+            160
+          ],
+          [
+            120,
+            80
+          ],
+          [
+            40,
+            80
+          ],
+          [
+            40,
+            160
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            40,
+            160
+          ],
+          [
+            48,
+            160
+          ],
+          [
+            48,
+            152
+          ],
+          [
+            40,
+            152
+          ],
+          [
+            40,
+            160
+          ]
+        ],
+        "closed": true
+      },
+      {
+        "points": [
+          [
+            40,
+            160
+          ],
+          [
+            48,
+            160
+          ],
+          [
+            48,
+            152
+          ],
+          [
+            40,
+            152
+          ],
+          [
+            40,
+            160
+          ]
+        ],
+        "closed": true
+      }
+    ],
+    "paths": [
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 40,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 120,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 120,
+            "y": 80
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 80
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "fillPatternId": "P1"
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 40,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 48,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 48,
+            "y": 152
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 152
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "alpha": 1,
+        "clipDepth": 1,
+        "clipBBox": [
+          40,
+          80,
+          120,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      },
+      {
+        "ops": [
+          {
+            "kind": "moveto",
+            "x": 40,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 48,
+            "y": 160
+          },
+          {
+            "kind": "lineto",
+            "x": 48,
+            "y": 152
+          },
+          {
+            "kind": "lineto",
+            "x": 40,
+            "y": 152
+          },
+          {
+            "kind": "close"
+          }
+        ],
+        "closed": true,
+        "strokeWidth": 0,
+        "paint": "fill",
+        "colorSpace": "DeviceRGB",
+        "fillColor": [
+          1,
+          0,
+          0
+        ],
+        "alpha": 1,
+        "clipDepth": 2,
+        "clipBBox": [
+          40,
+          152,
+          48,
+          160
+        ],
+        "fillPatternId": "P1",
+        "tileId": 5,
+        "tileCtm": [
+          1,
+          0,
+          0,
+          -1,
+          40,
+          160
+        ]
+      }
+    ],
+    "textSpans": null,
+    "source": "vector"
+  }
+]

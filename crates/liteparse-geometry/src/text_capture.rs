@@ -884,9 +884,17 @@ fn align_coalesced_text_shows(
     let mut aligned = Vec::new();
     let mut object_index = 0;
     let mut glyph_offset = 0;
-    for (show_index, paint) in content.text_paints.iter().filter(|paint| paint.has_text).enumerate() {
+    for (show_index, paint) in content
+        .text_paints
+        .iter()
+        .filter(|paint| paint.has_text)
+        .enumerate()
+    {
         while object_index < order.text.len()
-            && glyph_offset == native_by_object.get(&order.text[object_index]).map_or(0, Vec::len)
+            && glyph_offset
+                == native_by_object
+                    .get(&order.text[object_index])
+                    .map_or(0, Vec::len)
         {
             object_index += 1;
             glyph_offset = 0;
@@ -909,8 +917,12 @@ fn align_coalesced_text_shows(
             if let SourceTextElement::Bytes(bytes) = element {
                 let mut offset = 0;
                 while offset < bytes.len() {
-                    let (code, length) =
-                        encoded_character(&bytes[offset..], paint, &encoding, &native[glyph_offset..])?;
+                    let (code, length) = encoded_character(
+                        &bytes[offset..],
+                        paint,
+                        &encoding,
+                        &native[glyph_offset..],
+                    )?;
                     codes.push((code, length));
                     offset += length;
                 }
@@ -919,7 +931,10 @@ fn align_coalesced_text_shows(
         let native_remaining = &native[glyph_offset..];
         let mut consumed = 0;
         for (source_index, code) in codes.iter().enumerate() {
-            if native_remaining.get(consumed).is_some_and(|glyph| glyph.code == code.0) {
+            if native_remaining
+                .get(consumed)
+                .is_some_and(|glyph| glyph.code == code.0)
+            {
                 consumed += 1;
             } else if !paint.space_codes.contains(code) {
                 return Err(text_error(format!(
@@ -1125,11 +1140,20 @@ fn source_glyph_frames(
     let mut painted_glyphs: HashMap<PaintReplayKey, Vec<(usize, bool)>> = HashMap::new();
     let mut cursors = HashMap::new();
     let mut objects = order.text.iter();
-    let coalesced = order.text.len() != content.text_line_corrections.len();
-    let alignment = if coalesced {
-        Some(align_coalesced_text_shows(content, order, &native_by_object)?)
+    // Equal show/object counts preserve empty native objects for source paints
+    // whose glyphs PDFium suppresses (for example a declared encoded space).
+    // Coalesced alignment is needed only when PDFium merged source shows.
+    let (coalesced, alignment) = if order.text.len() == content.text_line_corrections.len() {
+        (false, None)
     } else {
-        None
+        (
+            true,
+            Some(align_coalesced_text_shows(
+                content,
+                order,
+                &native_by_object,
+            )?),
+        )
     };
     let mut paint_objects = Vec::new();
     let mut paint_index = 0;
@@ -1169,7 +1193,11 @@ fn source_glyph_frames(
             })
             .transpose()?;
         let native = assigned.map_or_else(
-            || object.and_then(|index| native_by_object.get(index)).map_or(&[][..], Vec::as_slice),
+            || {
+                object
+                    .and_then(|index| native_by_object.get(index))
+                    .map_or(&[][..], Vec::as_slice)
+            },
             |show| show.glyphs.as_slice(),
         );
         let encoding = font.and_then(Font::encoding).unwrap_or_default();
@@ -1493,10 +1521,15 @@ pub fn restore_source_text_positions(
     } = source_glyph_frames(page, text_page, content, &order, characters)?;
     let mut source_names = HashMap::new();
     let mut corrections = HashMap::new();
-    for ((object, paint), correction) in paint_objects.iter().copied().zip(
-        content.text_paints.iter().filter(|paint| paint.has_text)
-    ).zip(content.text_line_corrections.iter().copied()) {
-        source_names.entry(object).or_insert(paint.font_name.as_deref());
+    for ((object, paint), correction) in paint_objects
+        .iter()
+        .copied()
+        .zip(content.text_paints.iter().filter(|paint| paint.has_text))
+        .zip(content.text_line_corrections.iter().copied())
+    {
+        source_names
+            .entry(object)
+            .or_insert(paint.font_name.as_deref());
         corrections.entry(object).or_insert(correction);
     }
     // Kerning can put a trailing space inside the next token's bounds. Its
@@ -1546,7 +1579,9 @@ pub fn restore_source_text_positions(
         let delta = match token.source_order.and_then(|index| corrections.get(&index)) {
             Some(delta) => *delta,
             None if coalesced => [0.0, 0.0],
-            None => return Err(text_error("native text token has no source paint operation").into()),
+            None => {
+                return Err(text_error("native text token has no source paint operation").into());
+            }
         };
         if let Some(Some(name)) = token
             .source_order
@@ -1864,7 +1899,8 @@ mod tests {
         let document = library.load_document(&path, None).unwrap();
         let page = document.page(page_number as i32 - 1).unwrap();
         let source = lopdf::Document::load(&path).unwrap();
-        let content = crate::content_paths::capture_loaded_page_content(&source, &page, page_number).unwrap();
+        let content =
+            crate::content_paths::capture_loaded_page_content(&source, &page, page_number).unwrap();
         let text_page = page.text().unwrap();
         let mut order = ObjectOrder::default();
         let mut next = 0;
@@ -1875,12 +1911,25 @@ mod tests {
         }
         let mut native_by_object: HashMap<usize, Vec<NativeGlyph>> = HashMap::new();
         for (index, glyph) in text_page.chars().enumerate() {
-            if glyph.is_generated() { continue; }
-            let Some(object) = glyph.text_object().and_then(|object| order.all.get(&(object as usize))) else { continue; };
+            if glyph.is_generated() {
+                continue;
+            }
+            let Some(object) = glyph
+                .text_object()
+                .and_then(|object| order.all.get(&(object as usize)))
+            else {
+                continue;
+            };
             let (x, y) = glyph.origin().unwrap();
-            native_by_object.entry(*object).or_default().push(NativeGlyph {
-                index, code: glyph.char_code(), unicode: glyph.unicode(), start: [x, y]
-            });
+            native_by_object
+                .entry(*object)
+                .or_default()
+                .push(NativeGlyph {
+                    index,
+                    code: glyph.char_code(),
+                    unicode: glyph.unicode(),
+                    start: [x, y],
+                });
         }
         if order.text.len() != content.text_line_corrections.len() {
             align_coalesced_text_shows(&content, &order, &native_by_object).unwrap();

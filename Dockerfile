@@ -16,7 +16,8 @@ COPY crates/ ./crates/
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,id=liteparse-target-${TARGETARCH},target=/cargo-target \
+    --mount=type=cache,id=liteparse-native-deps-${TARGETARCH},target=/root/.cache \
+    --mount=type=cache,id=liteparse-target-${TARGETARCH}-native-cache,target=/cargo-target \
     case "$TARGETARCH" in \
         amd64) rust_target=x86_64-unknown-linux-gnu ;; \
         arm64) rust_target=aarch64-unknown-linux-gnu; \

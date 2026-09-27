@@ -16,6 +16,10 @@ use crate::path_capture::PathCapture;
 
 const MAX_FORM_DEPTH: usize = 16;
 const MAX_PATTERN_DEPTH: usize = 16;
+// ISO 32000-1 §8.7.3: a tiling pattern is a stream whose content paints the tile.
+const PATTERN_TYPE_TILING: i64 = 1;
+// ISO 32000-1 §8.7.4.2: a shading pattern is a plain dictionary with no content.
+const PATTERN_TYPE_SHADING: i64 = 2;
 const MAX_CMAP_DEPTH: usize = 16;
 const MAX_COLOR_SPACE_DEPTH: usize = 32;
 const MAX_GRAPHICS_STATE_DEPTH: usize = 64;
@@ -1276,6 +1280,20 @@ impl<'a> StreamReader<'a> {
         let (id, object) = self
             .resource(resources, b"Pattern", key.as_bytes())?
             .ok_or_else(|| invalid(format!("missing Pattern {key}")))?;
+        let dict = match object {
+            lopdf::Object::Stream(stream) => &stream.dict,
+            lopdf::Object::Dictionary(dict) => dict,
+            _ => return Err(invalid(format!("Pattern {key} is neither a stream nor a dictionary")).into()),
+        };
+        match dict.get(b"PatternType").and_then(lopdf::Object::as_i64) {
+            Ok(PATTERN_TYPE_TILING) => {}
+            // A shading fills the path with colour alone; the path's outline
+            // was already captured by the caller, and there is no content
+            // stream holding further vector paths to walk.
+            Ok(PATTERN_TYPE_SHADING) => return Ok(()),
+            Ok(other) => return Err(invalid(format!("Pattern {key} has unknown PatternType {other}")).into()),
+            Err(_) => return Err(invalid(format!("Pattern {key} has no PatternType")).into()),
+        }
         let stream = object.as_stream()?.clone();
         if let Some(id) = id {
             if self.active_patterns.len() >= MAX_PATTERN_DEPTH {
@@ -1664,6 +1682,66 @@ mod tests {
             error.to_string(),
             "CMap inheritance exceeds the depth limit"
         );
+    }
+
+    fn pattern_fill_reader(source: &SourceDocument) -> StreamReader<'_> {
+        StreamReader {
+            source,
+            capture: PathCapture::default(),
+            capture_clips: Vec::new(),
+            layers: Vec::new(),
+            marked_content: Vec::new(),
+            active_forms: Vec::new(),
+            active_patterns: Vec::new(),
+            page_bounds: [0.0, 0.0, 100.0, 100.0],
+            image_ops: 0,
+            image_area: 0.0,
+            text_line_corrections: Vec::new(),
+            text_paints: Vec::new(),
+            next_text_run: 1,
+        }
+    }
+
+    const PATTERN_FILL_CONTENT: &[u8] = b"/Pattern cs /P0 scn 10 10 30 20 re f";
+
+    #[test]
+    fn shading_pattern_fill_keeps_the_filled_path() {
+        use lopdf::dictionary;
+
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "Pattern" => dictionary! {
+                "P0" => dictionary! {
+                    "Type" => "Pattern",
+                    "PatternType" => PATTERN_TYPE_SHADING,
+                    "Shading" => dictionary! {
+                        "ShadingType" => 2,
+                        "ColorSpace" => "DeviceRGB",
+                        "Coords" => vec![0.into(), 0.into(), 1.into(), 0.into()],
+                    },
+                },
+            },
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(PATTERN_FILL_CONTENT, &[&resources], GraphicsState::default())
+            .expect("a shading-pattern fill is valid PDF and must not fail extraction");
+        assert_eq!(reader.capture.paths.len(), 1);
+    }
+
+    #[test]
+    fn pattern_without_a_known_type_is_rejected() {
+        use lopdf::dictionary;
+
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "Pattern" => dictionary! { "P0" => dictionary! { "Type" => "Pattern" } },
+        };
+        let mut reader = pattern_fill_reader(&source);
+        let error = reader
+            .process(PATTERN_FILL_CONTENT, &[&resources], GraphicsState::default())
+            .expect_err("a pattern with no PatternType cannot be walked");
+        assert!(error.to_string().contains("no PatternType"), "{error}");
     }
 
     #[test]

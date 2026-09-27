@@ -14,8 +14,8 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,id=liteparse-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=liteparse-git-${TARGETARCH},target=/usr/local/cargo/git \
     --mount=type=cache,id=liteparse-native-deps-${TARGETARCH},target=/root/.cache \
     --mount=type=cache,id=liteparse-target-${TARGETARCH}-native-cache,target=/cargo-target \
     case "$TARGETARCH" in \

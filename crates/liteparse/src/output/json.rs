@@ -1,6 +1,7 @@
 use crate::ocr_merge::PageComplexityStats;
 use crate::types::{
-    DocumentAnnotation, FormField, ParsedPage, Rect, StructureTree, VectorGraphics, XfaPacket,
+    DocumentAnnotation, FormField, OutlineTarget, ParsedPage, Rect, StructureTree, VectorGraphics,
+    XfaPacket,
 };
 use serde::Serialize;
 
@@ -55,6 +56,8 @@ pub(crate) struct JsonPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_bounds: Option<Rect>,
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
     pub text_items: Vec<JsonTextItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub complexity: Option<PageComplexityStats>,
@@ -73,6 +76,10 @@ pub(crate) struct JsonPage {
 #[derive(Debug, Serialize)]
 pub(crate) struct ParseResultJson {
     pub total_pages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structure_version: Option<&'static str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub outline: Vec<OutlineTarget>,
     pub pages: Vec<JsonPage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub page_errors: Vec<crate::types::PageError>,
@@ -114,6 +121,11 @@ pub(crate) struct JsonImage {
 pub(crate) fn build_json(pages: &[ParsedPage], extract_text_metadata: bool) -> ParseResultJson {
     ParseResultJson {
         total_pages: pages.len().min(u32::MAX as usize) as u32,
+        structure_version: pages
+            .iter()
+            .any(|page| !page.markdown.is_empty())
+            .then_some(liteparse_structure::STRUCTURE_VERSION),
+        outline: Vec::new(),
         images: Vec::new(),
         page_errors: Vec::new(),
         image_error_count: 0,
@@ -128,6 +140,7 @@ pub(crate) fn build_json(pages: &[ParsedPage], extract_text_metadata: bool) -> P
                 height: page.page_height,
                 content_bounds: page.content_bounds.clone(),
                 text: page.text.clone(),
+                markdown: (!page.markdown.is_empty()).then(|| page.markdown.clone()),
                 text_items: page
                     .text_items
                     .iter()
@@ -182,6 +195,7 @@ pub fn format_json_result(
 ) -> Result<String, serde_json::Error> {
     let mut json = build_json(&result.pages, extract_text_metadata);
     json.total_pages = result.total_pages;
+    json.outline = result.outline.clone();
     json.images = result
         .images
         .iter()
@@ -264,6 +278,16 @@ mod tests {
             structure_tree: None,
             blocks: None,
         }
+    }
+
+    #[test]
+    fn json_markdown_does_not_replace_page_text() {
+        let mut parsed = page(vec![]);
+        parsed.markdown = "# Heading\n\nBody".into();
+        let json = build_json(&[parsed], false);
+        let value = serde_json::to_value(json).unwrap();
+        assert_eq!(value["pages"][0]["text"], "txt");
+        assert_eq!(value["pages"][0]["markdown"], "# Heading\n\nBody");
     }
 
     #[test]

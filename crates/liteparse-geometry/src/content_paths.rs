@@ -1283,7 +1283,12 @@ impl<'a> StreamReader<'a> {
         let dict = match object {
             lopdf::Object::Stream(stream) => &stream.dict,
             lopdf::Object::Dictionary(dict) => dict,
-            _ => return Err(invalid(format!("Pattern {key} is neither a stream nor a dictionary")).into()),
+            _ => {
+                return Err(invalid(format!(
+                    "Pattern {key} is neither a stream nor a dictionary"
+                ))
+                .into());
+            }
         };
         match dict.get(b"PatternType").and_then(lopdf::Object::as_i64) {
             Ok(PATTERN_TYPE_TILING) => {}
@@ -1291,7 +1296,11 @@ impl<'a> StreamReader<'a> {
             // was already captured by the caller, and there is no content
             // stream holding further vector paths to walk.
             Ok(PATTERN_TYPE_SHADING) => return Ok(()),
-            Ok(other) => return Err(invalid(format!("Pattern {key} has unknown PatternType {other}")).into()),
+            Ok(other) => {
+                return Err(
+                    invalid(format!("Pattern {key} has unknown PatternType {other}")).into(),
+                );
+            }
             Err(_) => return Err(invalid(format!("Pattern {key} has no PatternType")).into()),
         }
         let stream = object.as_stream()?.clone();
@@ -1724,7 +1733,11 @@ mod tests {
         };
         let mut reader = pattern_fill_reader(&source);
         reader
-            .process(PATTERN_FILL_CONTENT, &[&resources], GraphicsState::default())
+            .process(
+                PATTERN_FILL_CONTENT,
+                &[&resources],
+                GraphicsState::default(),
+            )
             .expect("a shading-pattern fill is valid PDF and must not fail extraction");
         assert_eq!(reader.capture.paths.len(), 1);
     }
@@ -1739,7 +1752,11 @@ mod tests {
         };
         let mut reader = pattern_fill_reader(&source);
         let error = reader
-            .process(PATTERN_FILL_CONTENT, &[&resources], GraphicsState::default())
+            .process(
+                PATTERN_FILL_CONTENT,
+                &[&resources],
+                GraphicsState::default(),
+            )
             .expect_err("a pattern with no PatternType cannot be walked");
         assert!(error.to_string().contains("no PatternType"), "{error}");
     }

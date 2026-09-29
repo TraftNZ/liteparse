@@ -211,9 +211,11 @@ fn apply_layout(
     parser: &LiteParse,
     parsed_pages: &mut [ParsedPage],
     outline: &[OutlineTarget],
+    total_pages: u32,
 ) -> Option<String> {
     let config = &parser.config;
-    let wants_markdown = config.output_format == crate::config::OutputFormat::Markdown;
+    let wants_markdown =
+        config.output_format == crate::config::OutputFormat::Markdown || config.emit_markdown;
     if !wants_markdown && !config.extract_blocks {
         return None;
     }
@@ -238,6 +240,7 @@ fn apply_layout(
     if !wants_markdown {
         return None;
     }
+    stages::normalize_document_markdown(&mut page_md, parsed_pages, outline, &signals, total_pages);
     let md = page_md.join("\n\n-----\n\n");
     for (page, page_md) in parsed_pages.iter_mut().zip(page_md) {
         page.markdown = page_md;
@@ -320,7 +323,8 @@ impl LiteParse {
         target_pages: Option<&'a [u32]>,
         max_pages: usize,
     ) -> stages::ExtractRequest<'a> {
-        let markdown = self.config.output_format == crate::config::OutputFormat::Markdown;
+        let markdown = self.config.output_format == crate::config::OutputFormat::Markdown
+            || self.config.emit_markdown;
         stages::ExtractRequest {
             target_pages,
             max_pages,
@@ -968,7 +972,7 @@ impl LiteParse {
             t2.duration_since(t_ocr).as_secs_f64() * 1000.0
         ));
 
-        let laid_out = apply_layout(self, &mut parsed_pages, &outline);
+        let laid_out = apply_layout(self, &mut parsed_pages, &outline, total_pages);
         let mut full_text = if let Some(md) = laid_out {
             let t3 = web_time::Instant::now();
             log(&format!(
@@ -1026,7 +1030,7 @@ impl LiteParse {
         let total_pages = pages.len().min(u32::MAX as usize) as u32;
         let mut parsed_pages = stages::project(pages);
 
-        let full_text = if let Some(md) = apply_layout(self, &mut parsed_pages, &outline) {
+        let full_text = if let Some(md) = apply_layout(self, &mut parsed_pages, &outline, total_pages) {
             md
         } else {
             parsed_pages

@@ -85,6 +85,10 @@ struct ParseCommand {
     #[arg(long, default_value = "text")]
     format: String,
 
+    /// Include per-page Markdown in JSON output.
+    #[arg(long)]
+    emit_markdown: bool,
+
     /// Disable OCR
     #[arg(long)]
     no_ocr: bool,
@@ -469,6 +473,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue_on_page_error: cmd.continue_on_page_error,
                 dpi: cmd.dpi,
                 output_format: format,
+                emit_markdown: cmd.emit_markdown,
                 preserve_very_small_text: cmd.preserve_small_text,
                 password: cmd.password,
                 quiet: cmd.quiet,

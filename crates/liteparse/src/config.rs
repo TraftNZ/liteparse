@@ -6,6 +6,9 @@ pub const DEFAULT_OCR_MAX_LONG_EDGE_PX: u32 = 4096;
 /// Configuration for LiteParse document parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteParseConfig {
+    /// Include rendered page Markdown in JSON without changing page text.
+    #[serde(default)]
+    pub emit_markdown: bool,
     /// OCR language code (Tesseract format: "eng", "fra", "deu", etc.).
     pub ocr_language: String,
     /// Whether OCR is enabled. When true, runs on text-sparse pages and embedded images.
@@ -290,6 +293,7 @@ impl LiteParseConfig {
 impl Default for LiteParseConfig {
     fn default() -> Self {
         Self {
+            emit_markdown: false,
             ocr_language: "eng".to_string(),
             // OCR is on by default only when a built-in engine is compiled in
             // (the `tesseract` feature). Builds without a built-in engine

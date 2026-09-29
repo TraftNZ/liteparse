@@ -360,6 +360,20 @@ async fn compose(parser: &LiteParse, input: PdfInput) -> ParseResult {
                 page.markdown = stages::render_page_markdown(page, blocks.as_deref());
             }
         }
+        if markdown {
+            let mut page_markdown: Vec<_> =
+                parsed.iter().map(|page| page.markdown.clone()).collect();
+            stages::normalize_document_markdown(
+                &mut page_markdown,
+                &parsed,
+                &outline,
+                &signals,
+                total_pages,
+            );
+            for (page, normalized) in parsed.iter_mut().zip(page_markdown) {
+                page.markdown = normalized;
+            }
+        }
     }
     let mut text = if markdown {
         parsed

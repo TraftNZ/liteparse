@@ -23,7 +23,7 @@
 //! | OCR | [`render_for_ocr`] → [`recognize`] → [`merge_ocr`] | pdfium / any / pure |
 //! | content filters | [`apply_content_filters`] | pure |
 //! | projection | [`project`] | pure |
-//! | markdown | [`document_signals`] → [`extract_blocks`] → [`render_page_markdown`] | pure |
+//! | markdown | [`document_signals`] → [`extract_blocks`] → [`render_page_markdown`] → [`normalize_document_markdown`] | pure |
 //! | screenshots | [`screenshots`] | pdfium |
 //!
 //! [`Document`] and [`Library`] are the `pdfium` crate's types re-exported
@@ -318,6 +318,59 @@ pub fn document_signals(pages: &[ParsedPage], keep_headers_footers: bool) -> Doc
         heading_map,
         header_footer,
     }
+}
+
+/// Apply whole-document heading normalization to rendered per-page Markdown.
+/// The pages supply physical line positions for missing bookmark headings.
+///
+/// `markdown`/`pages` may be a subset of the document (e.g. `--target-pages`
+/// or an OCR batch), so real page numbers are taken from
+/// `ParsedPage::page_number` rather than each page's position in the slice;
+/// `total_pages` is the whole document's page count, independent of any
+/// `--target-pages`/`--max-pages` limit applied to `pages`.
+pub fn normalize_document_markdown(
+    markdown: &mut [String],
+    pages: &[ParsedPage],
+    outline: &[OutlineTarget],
+    signals: &DocumentSignals,
+    total_pages: u32,
+) {
+    let bookmarks: Vec<liteparse_structure::Bookmark> = outline
+        .iter()
+        .map(|entry| liteparse_structure::Bookmark {
+            level: entry.level,
+            title: entry.title.clone(),
+            page_index: entry.page_index,
+            y_pdf: entry.y_pdf,
+        })
+        .collect();
+    let positions: Vec<liteparse_structure::PagePosition> = pages
+        .iter()
+        .map(|page| liteparse_structure::PagePosition {
+            width: page.page_width,
+            height: page.page_height,
+            lines: page
+                .projected_lines
+                .iter()
+                .map(|line| liteparse_structure::PositionedLine {
+                    text: line.text.clone(),
+                    y_top: line.bbox.y,
+                })
+                .collect(),
+        })
+        .collect();
+    let page_numbers: Vec<i32> = pages
+        .iter()
+        .map(|page| (page.page_number as i32).saturating_sub(1))
+        .collect();
+    liteparse_structure::normalize_pages(
+        markdown,
+        &bookmarks,
+        &signals.header_footer,
+        &positions,
+        &page_numbers,
+        total_pages as usize,
+    );
 }
 
 /// Per-document inputs to [`extract_blocks`] other than the signals.

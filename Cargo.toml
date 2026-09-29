@@ -5,6 +5,7 @@ members = [
     "crates/pdfium",
     "crates/liteparse",
     "crates/liteparse-geometry",
+    "crates/liteparse-structure",
     "crates/liteparse-napi",
     "crates/liteparse-python",
     "crates/liteparse-wasm",

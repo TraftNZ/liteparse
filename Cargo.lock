@@ -2028,6 +2028,7 @@ dependencies = [
  "liteparse-geometry",
  "liteparse-pdfium",
  "liteparse-pdfium-sys",
+ "liteparse-structure",
  "lopdf",
  "memchr",
  "oar-ocr",
@@ -2109,6 +2110,10 @@ dependencies = [
  "serde_json",
  "tokio",
 ]
+
+[[package]]
+name = "liteparse-structure"
+version = "0.1.0"
 
 [[package]]
 name = "liteparse-wasm"

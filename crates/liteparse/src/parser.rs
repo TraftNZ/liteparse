@@ -1018,6 +1018,52 @@ impl LiteParse {
         })
     }
 
+    /// Render whole-document Markdown for pages that were extracted, OCR'd
+    /// and projected elsewhere, typically in bounded batches whose parse
+    /// could only see a slice of the document.
+    ///
+    /// Running headers/footers, heading levels and the body font size are
+    /// document-wide signals, so they are computed here over every page in
+    /// `pages` at once, then applied to each. `input` supplies the real page
+    /// count and the bookmark outline. Requires Markdown output to be
+    /// enabled in the config. Pages are returned sorted by page number with
+    /// `markdown` set.
+    pub async fn structure_pages(
+        &self,
+        input: PdfInput,
+        mut pages: Vec<ParsedPage>,
+    ) -> Result<Vec<ParsedPage>, LiteParseError> {
+        if self.config.output_format != crate::config::OutputFormat::Markdown
+            && !self.config.emit_markdown
+        {
+            return Err(LiteParseError::Config(
+                "structuring pages requires Markdown output".to_string(),
+            ));
+        }
+        pages.sort_by_key(|page| page.page_number);
+        if let Some(pair) = pages
+            .windows(2)
+            .find(|pair| pair[0].page_number == pair[1].page_number)
+        {
+            return Err(LiteParseError::Other(format!(
+                "page {} supplied more than once",
+                pair[0].page_number
+            )));
+        }
+        let resolved = self.resolve_input(input).await?;
+        let (total_pages, outline) = {
+            let lib = Library::init();
+            let document =
+                self.open_document(&lib, &resolved.input, self.config.password.as_deref())?;
+            (
+                document.page_count().max(0) as u32,
+                stages::outline(&document),
+            )
+        };
+        apply_layout(self, &mut pages, &outline, total_pages);
+        Ok(pages)
+    }
+
     /// Parse from pre-extracted pages, skipping PDFium text extraction.
     ///
     /// The caller supplies `Page`s already populated with text items (and,

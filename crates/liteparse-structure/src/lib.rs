@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-pub const STRUCTURE_VERSION: &str = "1";
+pub const STRUCTURE_VERSION: &str = "2";
 const MAX_HEADING_LEVEL: usize = 6;
 const MIN_TRUSTED_BOOKMARKS: usize = 3;
 const MIN_SPEC_SECTION_CODES: usize = 3;

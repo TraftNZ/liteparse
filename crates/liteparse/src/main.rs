@@ -30,6 +30,8 @@ enum Commands {
     Parse(ParseCommand),
     /// Generate screenshots of document pages (PDF, DOCX, XLSX, images, etc.)
     Screenshot(ScreenshotCommand),
+    /// Render whole-document Markdown for pages parsed in separate batches
+    Structure(StructureCommand),
     /// Parse multiple documents in batch mode
     BatchParse(BatchParseCommand),
     /// Check if a document is "complex" enough to require OCR or other advanced parsing
@@ -88,6 +90,12 @@ struct ParseCommand {
     /// Include per-page Markdown in JSON output.
     #[arg(long)]
     emit_markdown: bool,
+
+    /// Write the projected pages (lossless JSON) to this file, so a later
+    /// `lit structure` run can render Markdown over pages parsed in
+    /// separate batches.
+    #[arg(long)]
+    emit_parsed_pages: Option<String>,
 
     /// Disable OCR
     #[arg(long)]
@@ -238,6 +246,35 @@ struct ScreenshotCommand {
     /// Suppress progress output
     #[arg(short, long)]
     quiet: bool,
+}
+
+#[derive(Args, Debug)]
+struct StructureCommand {
+    /// Source PDF: supplies the real page count and bookmark outline.
+    file: String,
+
+    /// Projected-pages file written by `lit parse --emit-parsed-pages`
+    /// (repeatable; pages from every file are structured together).
+    #[arg(long = "pages-file", required = true)]
+    pages_files: Vec<String>,
+
+    /// Password for encrypted PDFs.
+    #[arg(long)]
+    password: Option<String>,
+}
+
+/// One page of `lit structure` output.
+#[derive(serde::Serialize)]
+struct StructuredPage {
+    page: usize,
+    markdown: String,
+}
+
+/// `lit structure` output document.
+#[derive(serde::Serialize)]
+struct StructureOutput {
+    structure_version: &'static str,
+    pages: Vec<StructuredPage>,
 }
 
 #[derive(Args, Debug)]
@@ -517,6 +554,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 lp.parse(&cmd.file).await?
             };
             warn_page_errors(&result, None);
+            if let Some(path) = &cmd.emit_parsed_pages {
+                let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+                serde_json::to_writer(file, &result.pages)?;
+            }
             let formatted = match lp.config().output_format {
                 OutputFormat::Json => {
                     json::format_json_result(&result, lp.config().extract_text_metadata)?
@@ -536,6 +577,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", formatted);
                 }
             }
+        }
+
+        Commands::Structure(cmd) => {
+            let mut pages: Vec<liteparse::types::ParsedPage> = Vec::new();
+            for path in &cmd.pages_files {
+                let file = std::io::BufReader::new(std::fs::File::open(path)?);
+                pages.extend(
+                    serde_json::from_reader::<_, Vec<liteparse::types::ParsedPage>>(file)
+                        .map_err(|err| format!("invalid pages file {path}: {err}"))?,
+                );
+            }
+            let lp = LiteParse::new(LiteParseConfig {
+                emit_markdown: true,
+                password: cmd.password,
+                quiet: true,
+                ..Default::default()
+            });
+            let structured = lp.structure_pages(PdfInput::Path(cmd.file), pages).await?;
+            let output = StructureOutput {
+                structure_version: liteparse_structure::STRUCTURE_VERSION,
+                pages: structured
+                    .into_iter()
+                    .map(|page| StructuredPage {
+                        page: page.page_number,
+                        markdown: page.markdown,
+                    })
+                    .collect(),
+            };
+            println!("{}", serde_json::to_string(&output)?);
         }
 
         Commands::Screenshot(cmd) => {

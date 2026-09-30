@@ -851,19 +851,16 @@ struct NativeGlyph {
 }
 
 impl NativeGlyph {
-    fn continues_utf16(&self, previous: &Self) -> bool {
-        if previous.index.checked_add(1) != Some(self.index)
-            || self.code != previous.code
-            || self.start != previous.start
-        {
-            return false;
-        }
-        let (Ok(high), Ok(low)) = (u16::try_from(previous.unicode), u16::try_from(self.unicode))
-        else {
-            return false;
-        };
-        let mut decoded = char::decode_utf16([high, low]);
-        decoded.next().is_some_and(|scalar| scalar.is_ok()) && decoded.next().is_none()
+    /// One source glyph that PDFium reports as several characters: the next
+    /// character of the same code painted at the same origin. A character
+    /// outside the Basic Multilingual Plane arrives as its two UTF-16 halves,
+    /// and a ligature arrives as every letter its ToUnicode entry maps to (the
+    /// fi glyph as f and i). Two paints of one code cannot share an origin
+    /// otherwise, because a painted glyph advances the pen.
+    fn continues_source_glyph(&self, previous: &Self) -> bool {
+        previous.index.checked_add(1) == Some(self.index)
+            && self.code == previous.code
+            && self.start == previous.start
     }
 }
 
@@ -1359,7 +1356,7 @@ fn source_glyph_frames(
             for (index, glyph) in native.iter().enumerate() {
                 let continuation = index
                     .checked_sub(1)
-                    .filter(|previous| glyph.continues_utf16(&native[*previous]))
+                    .filter(|previous| glyph.continues_source_glyph(&native[*previous]))
                     .and_then(|previous| native_sources.get(previous).copied());
                 let source = if let Some(index) = continuation {
                     source_frames.get(index).map(|source| (index, source))
@@ -1378,7 +1375,12 @@ fn source_glyph_frames(
                         })
                 }
                 .map(|(index, (_, frame))| (index, frame.clone()))
-                .ok_or_else(|| text_error("native glyph has no matching source character"))?;
+                .ok_or_else(|| {
+                    text_error(format!(
+                        "native glyph has no matching source character: code {} (U+{:04X}) at ({:.1}, {:.1})",
+                        glyph.code, glyph.unicode, glyph.start[0], glyph.start[1]
+                    ))
+                })?;
                 matched_sources.insert(source.0);
                 native_sources.push(source.0);
                 let is_space = characters.get(&glyph.index).map_or_else(
@@ -1885,6 +1887,33 @@ pub fn group_text_tokens(tokens: &[TextToken]) -> Vec<TextSpan> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn glyph(index: usize, code: u32, unicode: u32, start: [f64; 2]) -> NativeGlyph {
+        NativeGlyph {
+            index,
+            code,
+            unicode,
+            start,
+        }
+    }
+
+    #[test]
+    fn a_ligature_is_one_source_glyph() {
+        let f = glyph(4, 302, 'f' as u32, [867.3, 529.4]);
+        let i = glyph(5, 302, 'i' as u32, [867.3, 529.4]);
+        assert!(i.continues_source_glyph(&f));
+    }
+
+    #[test]
+    fn two_paints_of_one_code_are_two_glyphs() {
+        let first = glyph(4, 302, 'f' as u32, [867.3, 529.4]);
+        let advanced = glyph(5, 302, 'f' as u32, [872.1, 529.4]);
+        let other_code = glyph(5, 374, 'i' as u32, [867.3, 529.4]);
+        let not_next = glyph(6, 302, 'i' as u32, [867.3, 529.4]);
+        assert!(!advanced.continues_source_glyph(&first));
+        assert!(!other_code.continues_source_glyph(&first));
+        assert!(!not_next.continues_source_glyph(&first));
+    }
 
     #[test]
     fn selected_source_text_alignment() {

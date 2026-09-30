@@ -151,9 +151,21 @@ pub fn run_geometry_with_consumer(
         } = capture_text(&page, &text, &view)?;
         let content = capture_loaded_page_content(&source, &page, number)?;
         annotate_text_tokens(&page, &text, &view, &content, &characters, &mut tokens);
-        restore_source_text_positions(&page, &text, &content, &characters, &mut tokens)?;
+        // The geometry does not depend on where the text is placed. A page whose
+        // text cannot be matched to its content stream keeps PDFium's positions
+        // and says why, rather than losing its geometry and every other page.
+        let mut placed = tokens.clone();
+        let text_positions_error =
+            match restore_source_text_positions(&page, &text, &content, &characters, &mut placed) {
+                Ok(()) => {
+                    tokens = placed;
+                    None
+                }
+                Err(error) => Some(error.to_string()),
+            };
         restore_loaded_source_font_metadata(&source, &mut tokens);
         let mut geometry = assemble_vector_page(number, content, group_text_tokens(&tokens));
+        geometry.text_positions_error = text_positions_error;
         if (geometry.class == "raster" || options.force_raster) && !options.no_raster {
             let width = (geometry.width_pts * options.raster_dpi / POINTS_PER_INCH).ceil();
             let height = (geometry.height_pts * options.raster_dpi / POINTS_PER_INCH).ceil();

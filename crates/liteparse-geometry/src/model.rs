@@ -201,6 +201,10 @@ pub struct PageGeometry {
     pub source: String,
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub confidence: f64,
+    /// Why the text could not be placed at its content-stream positions. The
+    /// page keeps its geometry and PDFium's text positions, which are coarser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_positions_error: Option<String>,
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.

@@ -34,5 +34,6 @@ pub fn assemble_vector_page(
         vertex_refs: Vec::new(),
         source: "vector".into(),
         confidence: 0.0,
+        text_positions_error: None,
     }
 }

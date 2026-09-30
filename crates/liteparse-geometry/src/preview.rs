@@ -63,6 +63,8 @@ pub struct PagePreview {
     pub polylines: Vec<IndexedPolyline>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub text_spans: Vec<TextSpan>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_positions_error: Option<String>,
 }
 
 fn zero(value: &f64) -> bool {
@@ -205,6 +207,7 @@ pub fn filter_page(page: &PageGeometry, options: &PreviewOptions) -> PagePreview
         segments: filtered_segments,
         polylines: filtered_polylines,
         text_spans: filtered_text,
+        text_positions_error: page.text_positions_error.clone(),
     }
 }
 
@@ -234,6 +237,7 @@ mod tests {
             vertex_refs: Vec::new(),
             source: "vector".into(),
             confidence: 0.0,
+            text_positions_error: None,
         }
     }
 

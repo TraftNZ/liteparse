@@ -318,6 +318,18 @@ impl GraphicsState {
         [source[0] - native[0], source[1] - native[1]]
     }
 
+    /// The pen's width on the page. `w` is read in user space as it stands when
+    /// the path is stroked, so a pen set inside a scaled form or a `cm` is as
+    /// wide as the CTM makes it, not as the operand says; two strokes drawn at
+    /// different scales cannot be compared otherwise. A CTM that scales its axes
+    /// differently has no one width, and the geometric mean of the two is the
+    /// width of a round pen covering the same area. A zero width is the
+    /// thinnest line a device draws, and stays zero.
+    fn page_stroke_width(&self) -> f64 {
+        let [a, b, c, d, _, _] = self.ctm.0;
+        self.stroke_width * f64::from((a * d - b * c).abs()).sqrt()
+    }
+
     fn paint_style(&self, fill: bool, layer: &str) -> PaintStyle {
         let color_space = if fill {
             &self.fill_space
@@ -325,7 +337,7 @@ impl GraphicsState {
             &self.stroke_space
         };
         let mut style = PaintStyle {
-            stroke_width: if fill { 0.0 } else { self.stroke_width },
+            stroke_width: if fill { 0.0 } else { self.page_stroke_width() },
             paint: if fill { "fill" } else { "stroke" }.into(),
             color_space: if color_space == "Pattern" {
                 String::new()
@@ -1112,6 +1124,9 @@ impl<'a> StreamReader<'a> {
             .resource(resources, b"ExtGState", key.as_bytes())?
             .ok_or_else(|| invalid(format!("missing ExtGState {key}")))?;
         let dict = value.as_dict()?;
+        if let Ok(value) = dict.get(b"LW") {
+            state.stroke_width = number(value)?;
+        }
         if let Ok(value) = dict.get(b"CA") {
             state.stroke_alpha = number(value)?;
         }
@@ -1773,6 +1788,41 @@ mod tests {
             )
             .expect_err("a pattern with no PatternType cannot be walked");
         assert!(error.to_string().contains("no PatternType"), "{error}");
+    }
+
+    // A pen's width is compared across strokes (a dimension line against the
+    // hatch beside it), so it has to be the width on the page. The same 6-unit
+    // pen set inside a 0.12 scale is a 0.72 pt line, and a width set through an
+    // ExtGState is a width like any other.
+    #[test]
+    fn stroke_width_is_reported_on_the_page() {
+        use lopdf::dictionary;
+
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "ExtGState" => dictionary! { "G0" => dictionary! { "LW" => 2 } },
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(
+                b"q 0.12 0 0 0.12 0 0 cm 6 w 0 0 m 100 0 l S Q \
+                  q 2 0 0 0.5 0 0 cm 3 w 0 10 m 10 10 l S Q \
+                  /G0 gs 0 20 m 50 20 l S \
+                  0 w 0 30 m 50 30 l S",
+                &[&resources],
+                GraphicsState::default(),
+            )
+            .expect("plain strokes are valid PDF");
+        let widths: Vec<f64> = reader
+            .capture
+            .paths
+            .iter()
+            .map(|path| path.style.stroke_width)
+            .collect();
+        assert_eq!(widths.len(), 4);
+        for (got, want) in widths.iter().zip([0.72, 3.0, 2.0, 0.0]) {
+            assert!((got - want).abs() < 1e-5, "widths {widths:?}");
+        }
     }
 
     #[test]

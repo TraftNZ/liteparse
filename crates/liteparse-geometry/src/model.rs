@@ -240,7 +240,7 @@ pub struct ViewportScale {
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 11;
+pub const EXTRACTOR_VERSION: u32 = 12;
 
 #[cfg(test)]
 mod tests {

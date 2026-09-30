@@ -2158,8 +2158,7 @@ dependencies = [
 [[package]]
 name = "lopdf"
 version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7184fdea2bc3cd272a1acec4030c321a8f9875e877b3f92a53f2f6033fdc289"
+source = "git+https://github.com/TraftNZ/lopdf?rev=e9835af#e9835af8071820f6f11571374d5481dfd7ca5d9e"
 dependencies = [
  "aes",
  "bitflags 2.13.1",
@@ -2179,7 +2178,6 @@ dependencies = [
  "sha2 0.10.9",
  "stringprep",
  "thiserror 2.0.19",
- "ttf-parser 0.25.1",
  "weezl",
 ]
 

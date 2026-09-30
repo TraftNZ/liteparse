@@ -15,3 +15,8 @@ members = [
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/run-llama/liteparse"
+
+# lopdf stops parsing a content stream at the first NUL or form feed and drops
+# every operation after it (upstream through 0.45). Carried until merged there.
+[patch.crates-io]
+lopdf = { git = "https://github.com/TraftNZ/lopdf", rev = "e9835af" }

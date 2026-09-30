@@ -112,6 +112,20 @@ pub async fn resolve_pdf_input(
 
     match input {
         PdfInput::Path(p) => {
+            // A name without an extension says nothing about the format, so
+            // the content decides, exactly as it does for bytes.
+            if Path::new(&p).extension().is_none() {
+                if FileFormat::from_file(&p)? == FileFormat::PortableDocumentFormat {
+                    return Ok((PdfInput::Path(p), PdfInputGuard { temps: Vec::new() }));
+                }
+                let data = tokio::fs::read(&p).await?;
+                return Box::pin(resolve_pdf_input(
+                    PdfInput::Bytes(data),
+                    password,
+                    reject_text_formats,
+                ))
+                .await;
+            }
             let ext = Path::new(&p)
                 .extension()
                 .and_then(|e| e.to_str())
@@ -1378,6 +1392,32 @@ mod tests {
             .unwrap();
         assert!(matches!(input, PdfInput::Bytes(_)));
         assert!(guard.temps.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_pdf_input_extensionless_pdf_path_is_read_by_content() {
+        use crate::types::PdfInput;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cloned_3a6b0eeb");
+        std::fs::write(&path, b"%PDF-1.4\n").unwrap();
+        let path = path.to_str().unwrap().to_string();
+        let (input, guard) = resolve_pdf_input(PdfInput::Path(path.clone()), None, false)
+            .await
+            .unwrap();
+        assert!(matches!(input, PdfInput::Path(ref p) if *p == path));
+        assert!(!guard.is_converted());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_pdf_input_extensionless_text_is_refused_for_screenshot() {
+        use crate::types::PdfInput;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("readme");
+        std::fs::write(&path, b"plain words, no layout\n").unwrap();
+        let r = resolve_pdf_input(PdfInput::Path(path.to_str().unwrap().into()), None, true).await;
+        assert!(r.is_err());
     }
 
     #[tokio::test]

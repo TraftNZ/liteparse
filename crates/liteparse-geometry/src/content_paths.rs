@@ -11,8 +11,9 @@ use lopdf::{Document as SourceDocument, Object, ObjectId, content::Content};
 use pdfium::{Library, Page, PathSegment, SegmentKind, ViewportTransform};
 
 use crate::classify::image_coverage;
-use crate::model::PaintStyle;
+use crate::model::{PaintStyle, Viewport};
 use crate::path_capture::PathCapture;
+use crate::viewports::read_page_viewports;
 
 const MAX_FORM_DEPTH: usize = 16;
 const MAX_PATTERN_DEPTH: usize = 16;
@@ -554,6 +555,8 @@ pub struct SourcePageContent {
     /// Line-origin precision corrections in native text-object paint order.
     pub text_line_corrections: Vec<[f64; 2]>,
     pub text_paints: Vec<SourceTextPaint>,
+    pub viewports: Vec<Viewport>,
+    pub viewports_error: Option<String>,
 }
 
 impl<'a> StreamReader<'a> {
@@ -1544,8 +1547,19 @@ pub fn capture_loaded_page_content(
             ..GraphicsState::default()
         },
     )?;
+    // A viewport array the page cannot be read from states nothing about the
+    // page's drawings; the line work does not depend on it.
+    let (viewports, viewports_error) = match read_page_viewports(source, page_id, |x, y| {
+        let (x, y) = viewport.transform_point(x as f32, y as f32);
+        (f64::from(x), f64::from(y))
+    }) {
+        Ok(viewports) => (viewports, None),
+        Err(error) => (Vec::new(), Some(error.to_string())),
+    };
     Ok(SourcePageContent {
         paths: reader.capture,
+        viewports,
+        viewports_error,
         width_pts: f64::from(width_pts),
         height_pts: f64::from(height_pts),
         image_ops: reader.image_ops,

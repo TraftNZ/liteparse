@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compat_math::hypot;
 use crate::compat_sort::sort_by_less;
-use crate::model::{PageGeometry, PaintStyle, Polyline, TextSpan};
+use crate::model::{PageGeometry, PaintStyle, Polyline, TextSpan, Viewport};
 
 pub const MAX_SEGMENTS: usize = 1_000;
 pub const MAX_TEXT_SPANS: usize = 5_000;
@@ -65,6 +65,10 @@ pub struct PagePreview {
     pub text_spans: Vec<TextSpan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_positions_error: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub viewports: Vec<Viewport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewports_error: Option<String>,
 }
 
 fn zero(value: &f64) -> bool {
@@ -208,6 +212,8 @@ pub fn filter_page(page: &PageGeometry, options: &PreviewOptions) -> PagePreview
         polylines: filtered_polylines,
         text_spans: filtered_text,
         text_positions_error: page.text_positions_error.clone(),
+        viewports: page.viewports.clone(),
+        viewports_error: page.viewports_error.clone(),
     }
 }
 
@@ -238,6 +244,8 @@ mod tests {
             source: "vector".into(),
             confidence: 0.0,
             text_positions_error: None,
+            viewports: Vec::new(),
+            viewports_error: None,
         }
     }
 

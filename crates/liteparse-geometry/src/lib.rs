@@ -30,6 +30,7 @@ pub mod preview;
 pub mod raster;
 pub mod relations;
 pub mod text_capture;
+pub mod viewports;
 
 /// Resolve page resources in nearest-first order, including dictionaries
 /// embedded directly on ancestor `/Pages` nodes.

@@ -205,10 +205,42 @@ pub struct PageGeometry {
     /// page keeps its geometry and PDFium's text positions, which are coarser.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_positions_error: Option<String>,
+    /// The drawings the page declares in its `/VP` array, in page space.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub viewports: Vec<Viewport>,
+    /// Why the page's `/VP` array could not be read. The page keeps its
+    /// geometry; it states no viewports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewports_error: Option<String>,
+}
+
+/// One drawing's rectangle on the sheet, as the file declares it.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Viewport {
+    /// `[min_x, min_y, max_x, max_y]` in the page's viewport space.
+    pub bbox: [f64; 4],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<ViewportScale>,
+}
+
+/// A rectilinear `/Measure`: model units per point of the viewport.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewportScale {
+    pub units_per_point: f64,
+    /// The number format's unit label (`/U`); writers often leave it blank.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<String>,
+    /// The measure's ratio label (`/R`), as lettered by the writer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ratio: Option<String>,
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 10;
+pub const EXTRACTOR_VERSION: u32 = 11;
 
 #[cfg(test)]
 mod tests {

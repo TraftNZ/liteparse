@@ -35,5 +35,7 @@ pub fn assemble_vector_page(
         source: "vector".into(),
         confidence: 0.0,
         text_positions_error: None,
+        viewports: content.viewports,
+        viewports_error: content.viewports_error,
     }
 }

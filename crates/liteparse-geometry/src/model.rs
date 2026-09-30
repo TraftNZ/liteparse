@@ -208,7 +208,7 @@ pub struct PageGeometry {
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 9;
+pub const EXTRACTOR_VERSION: u32 = 10;
 
 #[cfg(test)]
 mod tests {

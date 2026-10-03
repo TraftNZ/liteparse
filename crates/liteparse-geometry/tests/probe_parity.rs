@@ -5,7 +5,7 @@ use liteparse_geometry::{
     inspect_page,
     model::PaintStyle,
     path_capture::PathCapture,
-    raster::trace_raster_segments,
+    raster::{RasterTrace, trace_raster_segments},
     relations::analyze_page,
 };
 use pdfium::{BitmapFormat, Library};
@@ -539,7 +539,11 @@ fn raster_centerlines_match_saved_geometry() {
     let page = document.page(0).expect("page");
     let bitmap = page.render_gray(72.0).expect("gray render");
     assert_eq!(bitmap.format(), BitmapFormat::Gray);
-    let (segments, confidence) = trace_raster_segments(
+    let RasterTrace {
+        segments,
+        confidence,
+        ..
+    } = trace_raster_segments(
         bitmap.buffer(),
         bitmap.width() as usize,
         bitmap.height() as usize,
@@ -579,7 +583,11 @@ fn assert_bsg_raster_pixels(name: &str) {
         serde_json::from_slice(&std::fs::read(dir.join("bsg-p1.full.json")).expect("BSG baseline"))
             .expect("decode baseline");
     let gray = std::fs::read(dir.join(name)).expect("saved grayscale pixels");
-    let (segments, confidence) = trace_raster_segments(
+    let RasterTrace {
+        segments,
+        confidence,
+        ..
+    } = trace_raster_segments(
         &gray,
         BASELINE_WIDTH,
         BASELINE_HEIGHT,
@@ -626,7 +634,11 @@ fn bsg_raster_centerlines_match_real_baseline() {
         .flat_map(|row| row[..bitmap.width() as usize].iter().copied())
         .collect();
     std::fs::write(dir.join("bsg-pdfium-matrix.gray"), &pixels).unwrap();
-    let (segments, confidence) = trace_raster_segments(
+    let RasterTrace {
+        segments,
+        confidence,
+        ..
+    } = trace_raster_segments(
         bitmap.buffer(),
         bitmap.width() as usize,
         bitmap.height() as usize,

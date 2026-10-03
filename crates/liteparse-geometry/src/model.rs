@@ -201,6 +201,11 @@ pub struct PageGeometry {
     pub source: String,
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub confidence: f64,
+    /// How far a scanned sheet's drawing is turned off the page axes, in
+    /// degrees, positive clockwise as the page is viewed. Reported, not
+    /// corrected: the traced lines keep the scan's own coordinates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skew_degrees: Option<f64>,
     /// Why the text could not be placed at its content-stream positions. The
     /// page keeps its geometry and PDFium's text positions, which are coarser.
     #[serde(default, skip_serializing_if = "Option::is_none")]

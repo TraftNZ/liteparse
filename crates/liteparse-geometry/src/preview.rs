@@ -243,6 +243,7 @@ mod tests {
             vertex_refs: Vec::new(),
             source: "vector".into(),
             confidence: 0.0,
+            skew_degrees: None,
             text_positions_error: None,
             viewports: Vec::new(),
             viewports_error: None,

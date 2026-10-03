@@ -182,18 +182,19 @@ pub fn run_geometry_with_consumer(
                 .into());
             }
             let bitmap = page.render_gray(options.raster_dpi as f32)?;
-            let (segments, confidence) = trace_raster_segments(
+            let traced = trace_raster_segments(
                 bitmap.buffer(),
                 bitmap.width() as usize,
                 bitmap.height() as usize,
                 bitmap.stride() as usize,
                 options.raster_dpi,
             );
-            geometry.segments = (!segments.is_empty()).then_some(segments);
+            geometry.segments = (!traced.segments.is_empty()).then_some(traced.segments);
             geometry.polylines = None;
             geometry.paths = None;
             geometry.source = "raster-traced".into();
-            geometry.confidence = confidence;
+            geometry.confidence = traced.confidence;
+            geometry.skew_degrees = traced.skew_degrees;
         }
         if options.relations {
             analyze_page(&mut geometry);

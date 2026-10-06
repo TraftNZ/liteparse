@@ -830,9 +830,13 @@ impl<'a> StreamReader<'a> {
                     saved.push(state.clone());
                 }
                 "Q" => {
-                    let restored = saved
-                        .pop()
-                        .ok_or_else(|| invalid("unbalanced graphics state restore"))?;
+                    // Real-world producers sometimes emit an extra restore. A
+                    // reader has no earlier state to restore in that case, so
+                    // leave the current state unchanged and keep the usable
+                    // geometry from the rest of the stream.
+                    let Some(restored) = saved.pop() else {
+                        continue;
+                    };
                     for _ in restored.clip_depth..state.clip_depth {
                         self.capture_clips.pop();
                     }
@@ -1741,6 +1745,32 @@ mod tests {
     }
 
     const PATTERN_FILL_CONTENT: &[u8] = b"/Pattern cs /P0 scn 10 10 30 20 re f";
+
+    #[test]
+    fn excess_graphics_state_restore_keeps_usable_geometry() {
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+
+        reader
+            .process(
+                b"Q 0 0 10 10 re f q 1 0 0 1 20 0 cm 0 0 10 10 re f Q Q",
+                &[],
+                GraphicsState::default(),
+            )
+            .expect("an excess restore cannot invalidate otherwise usable geometry");
+
+        assert_eq!(reader.capture.paths.len(), 2);
+        let x_coordinates = reader
+            .capture
+            .paths
+            .iter()
+            .map(|path| path.ops.iter().map(|op| op.x).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert!(x_coordinates[0].contains(&0.0));
+        assert!(x_coordinates[0].contains(&10.0));
+        assert!(x_coordinates[1].contains(&20.0));
+        assert!(x_coordinates[1].contains(&30.0));
+    }
 
     #[test]
     fn shading_pattern_fill_keeps_the_filled_path() {

@@ -10,6 +10,8 @@ use liteparse::types::PdfInput;
 
 mod pdf_jpeg;
 mod pdf_ops;
+#[cfg(feature = "oar-ocr")]
+mod sam;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -36,12 +38,39 @@ enum Commands {
     BatchParse(BatchParseCommand),
     /// Check if a document is "complex" enough to require OCR or other advanced parsing
     IsComplex(IsComplexCommand),
+    /// Segment a raster at point prompts with SAM 2.1 and write the mask PNG.
+    Sam(SamCommand),
     /// Extract raw text items from a PDF file (no grid projection) [dev tool]
     #[command(hide = true)]
     Extract(ExtractCommand),
     /// Extract embedded image bounding boxes from a page [dev tool]
     #[command(hide = true)]
     ImageBounds(ExtractCommand),
+}
+
+#[derive(Args, Debug)]
+struct SamCommand {
+    /// Input raster (PNG/JPEG).
+    image: String,
+
+    /// One prompt set as "x,y,label;x,y,label" in image pixels; label 1 is
+    /// positive, 0 negative. Repeat for several sets: the image is encoded once
+    /// and each set gets its own mask.
+    #[arg(long = "points", required = true)]
+    point_sets: Vec<String>,
+
+    /// Directory the masks are written to as mask-<set>.png (255 inside, 0
+    /// outside, image size), numbered from 0 in the order the sets were given.
+    #[arg(short, long)]
+    output_dir: String,
+
+    /// Directory holding encoder.onnx and decoder.onnx (default: INOSCOPE_SAM_MODELS_DIR).
+    #[arg(long)]
+    models_dir: Option<String>,
+
+    /// ONNX intra-op threads (0 lets the runtime choose).
+    #[arg(long, default_value_t = 0)]
+    threads: usize,
 }
 
 #[derive(Args, Debug)]
@@ -491,12 +520,44 @@ fn warn_page_errors(result: &liteparse::parser::ParseResult, file: Option<&str>)
     }
 }
 
+#[cfg(feature = "oar-ocr")]
+fn run_sam(cmd: SamCommand) -> Result<(), Box<dyn std::error::Error>> {
+    let models_dir = cmd
+        .models_dir
+        .map(std::path::PathBuf::from)
+        .or_else(sam::default_models_dir)
+        .ok_or("set --models-dir or INOSCOPE_SAM_MODELS_DIR")?;
+    let sets = cmd
+        .point_sets
+        .iter()
+        .map(|spec| sam::parse_points(spec))
+        .collect::<Result<Vec<_>, _>>()?;
+    let masks = sam::segment(
+        std::path::Path::new(&cmd.image),
+        &models_dir,
+        &sets,
+        cmd.threads,
+    )?;
+    std::fs::create_dir_all(&cmd.output_dir)?;
+    for (i, mask) in masks.iter().enumerate() {
+        let path = std::path::Path::new(&cmd.output_dir).join(format!("mask-{i}.png"));
+        mask.save_with_format(path, image::ImageFormat::Png)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "oar-ocr"))]
+fn run_sam(_cmd: SamCommand) -> Result<(), Box<dyn std::error::Error>> {
+    Err("lit was built without the oar-ocr feature, so `lit sam` is unavailable".into())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Pdf => pdf_ops::run()?,
+        Commands::Sam(cmd) => run_sam(cmd)?,
         Commands::Parse(cmd) => {
             let format = parse_output_format(&cmd.format)?;
             let image_mode = parse_image_mode(&cmd.image_mode)?;

@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [features]
 default = ["tesseract"]
-oar-ocr = ["dep:oar-ocr"]
+oar-ocr = ["dep:oar-ocr", "dep:ort"]
 oar-ocr-auto-download = ["oar-ocr", "oar-ocr/auto-download"]
 oar-ocr-cuda = ["oar-ocr", "oar-ocr/cuda"]
 oar-ocr-tensorrt = ["oar-ocr", "oar-ocr/tensorrt"]
@@ -54,6 +54,8 @@ usvg = "0.44"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 lopdf = { version = "0.38", default-features = false }
 oar-ocr = { version = "0.8", optional = true }
+# Same release oar-ocr links, used directly by `lit sam`.
+ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["std"] }
 rmp = "0.8"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "fs", "process"] }
 

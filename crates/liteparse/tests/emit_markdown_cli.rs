@@ -150,7 +150,9 @@ fn running_chrome_fixture(path: &std::path::Path) {
     );
     let catalog = document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
     document.trailer.set("Root", catalog);
-    document.save(path).expect("save running chrome PDF fixture");
+    document
+        .save(path)
+        .expect("save running chrome PDF fixture");
 }
 
 /// Header/footer repetition is a whole-document signal: pages parsed in
@@ -169,7 +171,14 @@ fn structure_removes_running_chrome_across_parse_batches() {
         let last = (first + BATCH_PAGES - 1).min(RUNNING_PAGES);
         let pages_file = directory.path().join(format!("batch_{index}.json"));
         let batch = Command::new(env!("CARGO_BIN_EXE_lit"))
-            .args(["parse", "--format", "json", "--no-ocr", "-q", "--target-pages"])
+            .args([
+                "parse",
+                "--format",
+                "json",
+                "--no-ocr",
+                "-q",
+                "--target-pages",
+            ])
             .arg(format!("{first}-{last}"))
             .arg("--emit-parsed-pages")
             .arg(&pages_file)
@@ -196,8 +205,16 @@ fn structure_removes_running_chrome_across_parse_batches() {
     for (index, page) in pages.iter().enumerate() {
         assert_eq!(page["page"], index + 1);
         let markdown = page["markdown"].as_str().expect("page Markdown");
-        assert!(!markdown.contains(RUNNING_HEADER), "page {}: {markdown}", index + 1);
-        assert!(!markdown.contains(RUNNING_FOOTER), "page {}: {markdown}", index + 1);
+        assert!(
+            !markdown.contains(RUNNING_HEADER),
+            "page {}: {markdown}",
+            index + 1
+        );
+        assert!(
+            !markdown.contains(RUNNING_FOOTER),
+            "page {}: {markdown}",
+            index + 1
+        );
         assert!(markdown.contains(&format!("Body paragraph number {}", index + 1)));
         assert_eq!(
             markdown.contains(SHORT_NOTE),

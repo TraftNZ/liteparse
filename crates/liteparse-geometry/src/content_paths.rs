@@ -1559,7 +1559,11 @@ fn unreadable_objects(source: &SourceDocument) -> Vec<u32> {
         .iter()
         .filter(|(number, entry)| {
             matches!(entry, lopdf::xref::XrefEntry::Normal { .. })
-                && !source.objects.keys().any(|id| id.0 == **number)
+                && source
+                    .objects
+                    .range((**number, 0)..=(**number, u16::MAX))
+                    .next()
+                    .is_none()
         })
         .map(|(number, _)| *number)
         .collect();

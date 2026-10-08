@@ -244,14 +244,28 @@ pub async fn recognize(
 /// text, filter engine artifacts, append the surviving results as `OCR`
 /// text items in viewport points. Errors only when every outcome failed and
 /// one of the failed pages had no usable native text (`ocr_failure_fatal`).
+///
+/// Pass `LiteParseConfig::effective_emit_word_boxes` for `emit_word_boxes`:
+/// each engine result is one word, so this is the only place the OCR path can
+/// attach a word box, and it has to agree with what extraction used or a run
+/// ends up with word boxes on native text only. See
+/// [`ExtractionOutputOptions::emit_word_boxes`](crate::extract::ExtractionOutputOptions).
 pub fn merge_ocr(
     pages: &mut [Page],
     outcomes: Vec<PageOcrOutcome>,
     ocr_failure_fatal: bool,
     min_confidence: f32,
     quiet: bool,
+    emit_word_boxes: bool,
 ) -> Result<(), LiteParseError> {
-    ocr_merge::merge_ocr_results(pages, outcomes, ocr_failure_fatal, min_confidence, quiet)
+    ocr_merge::merge_ocr_results(
+        pages,
+        outcomes,
+        ocr_failure_fatal,
+        min_confidence,
+        quiet,
+        emit_word_boxes,
+    )
 }
 
 // ── Content filters ────────────────────────────────────────────────────

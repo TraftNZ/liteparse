@@ -316,7 +316,15 @@ async fn compose(parser: &LiteParse, input: PdfInput) -> ParseResult {
             )
             .await;
             let outcomes = round_trip(outcomes, "Vec<PageOcrOutcome>");
-            stages::merge_ocr(&mut pages, outcomes, config.ocr_failure_fatal, 0.0, true).unwrap();
+            stages::merge_ocr(
+                &mut pages,
+                outcomes,
+                config.ocr_failure_fatal,
+                0.0,
+                true,
+                config.effective_emit_word_boxes(),
+            )
+            .unwrap();
         }
     }
 
@@ -737,7 +745,15 @@ async fn merge_ocr_applies_the_confidence_floor_to_recognized_items() {
         ],
         error: None,
     };
-    stages::merge_ocr(&mut pages, vec![outcome], false, CONFIDENCE_FLOOR, true).unwrap();
+    stages::merge_ocr(
+        &mut pages,
+        vec![outcome],
+        false,
+        CONFIDENCE_FLOOR,
+        true,
+        false,
+    )
+    .unwrap();
     assert_eq!(pages[0].text_items.len(), 1);
     assert_eq!(pages[0].text_items[0].text, "high confidence");
     assert_eq!(pages[0].text_items[0].font_name.as_deref(), Some("OCR"));
@@ -762,7 +778,7 @@ fn merge_ocr_rejects_outcome_for_unknown_page() {
         }],
         error: None,
     };
-    let err = stages::merge_ocr(&mut pages, vec![outcome], false, 0.0, true).unwrap_err();
+    let err = stages::merge_ocr(&mut pages, vec![outcome], false, 0.0, true, false).unwrap_err();
     assert!(err.to_string().contains("page 7"), "{err}");
 }
 

@@ -334,10 +334,7 @@ impl LiteParse {
                 continue_on_page_error: self.config.continue_on_page_error,
                 extract_content_bounds: self.config.extract_content_bounds,
                 extract_images: self.config.effective_extract_images(),
-                // The markdown table detector splits PDFium's merged
-                // multi-cell runs on real word geometry, so it needs word
-                // boxes even when the caller didn't ask for them.
-                emit_word_boxes: self.config.emit_word_boxes || markdown,
+                emit_word_boxes: self.config.effective_emit_word_boxes(),
                 extract_text_metadata: self.config.extract_text_metadata,
                 extract_vector_graphics: self.config.extract_vector_graphics,
                 extract_annotations: self.config.extract_annotations,
@@ -936,6 +933,7 @@ impl LiteParse {
                     self.config.ocr_failure_fatal,
                     self.config.ocr_min_confidence,
                     self.config.quiet,
+                    self.config.effective_emit_word_boxes(),
                 )?;
             }
         }
@@ -1076,15 +1074,16 @@ impl LiteParse {
         let total_pages = pages.len().min(u32::MAX as usize) as u32;
         let mut parsed_pages = stages::project(pages);
 
-        let full_text = if let Some(md) = apply_layout(self, &mut parsed_pages, &outline, total_pages) {
-            md
-        } else {
-            parsed_pages
-                .iter()
-                .map(|p| p.text.as_str())
-                .collect::<Vec<_>>()
-                .join("\n\n")
-        };
+        let full_text =
+            if let Some(md) = apply_layout(self, &mut parsed_pages, &outline, total_pages) {
+                md
+            } else {
+                parsed_pages
+                    .iter()
+                    .map(|p| p.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            };
 
         ParseResult {
             total_pages,

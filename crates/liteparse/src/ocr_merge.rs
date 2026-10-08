@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::error::LiteParseError;
 use crate::ocr::{OcrEngine, OcrOptions, OcrResult};
-use crate::types::{CutAxis, Page, ParsedPage, Rect, Region, RegionKind, TextItem};
+use crate::types::{CutAxis, Page, ParsedPage, Rect, Region, RegionKind, TextItem, WordBox};
 use pdfium::{Document, ImageBounds};
 use serde::{Deserialize, Serialize};
 
@@ -989,12 +989,21 @@ pub async fn recognize_rasters(
 /// Outcomes are matched to pages by `page_number`; an outcome for a page not
 /// in `pages` is an error rather than a panic, so a caller can merge a
 /// subset of pages or hand-built outcomes safely.
+///
+/// `emit_word_boxes` must match what the extraction stage used
+/// (`LiteParseConfig::effective_emit_word_boxes`). An engine reports one
+/// [`OcrResult`] per word, so each surviving result becomes a one-word
+/// [`TextItem`]; the item's own word box is attached here, which is what lets
+/// the projection pass merge neighbouring OCR items into a run that still
+/// carries per-word boxes. When `false`, no box is attached, matching the
+/// zero-allocation promise the config makes for native text.
 pub fn merge_ocr_results(
     pages: &mut [Page],
     outcomes: Vec<PageOcrOutcome>,
     ocr_failure_fatal: bool,
     min_confidence: f32,
     quiet: bool,
+    emit_word_boxes: bool,
 ) -> Result<(), LiteParseError> {
     // Track OCR task outcomes so we can distinguish a systemic failure (e.g.
     // missing Tesseract language data, which fails identically on every page)
@@ -1203,6 +1212,21 @@ pub fn merge_ocr_results(
                 ocr_h
             };
 
+            // The engine already segmented this result as a single word, so
+            // its box is the item's box. The clone only happens when the
+            // caller asked for word boxes.
+            let words = if emit_word_boxes {
+                vec![WordBox {
+                    text: cleaned.clone(),
+                    x: ocr_x,
+                    y: ocr_y,
+                    width: ocr_w,
+                    height: ocr_h,
+                }]
+            } else {
+                Vec::new()
+            };
+
             page.text_items.push(TextItem {
                 text: cleaned,
                 x: ocr_x,
@@ -1213,6 +1237,7 @@ pub fn merge_ocr_results(
                 font_name: Some("OCR".to_string()),
                 font_size: Some(font_size_hint),
                 confidence: Some((r.confidence * 1000.0).round() / 1000.0),
+                words,
                 ..Default::default()
             });
         }
@@ -1442,8 +1467,20 @@ fn garbled_scope(page: &Page) -> GarbledScope {
     }
 }
 
+/// Page-level garbled signal: substitution-cipher text (see [`garbled_scope`])
+/// or a substantial share of text whose Unicode mapping failed outright.
 fn page_is_garbled(page: &Page) -> bool {
-    !matches!(garbled_scope(page), GarbledScope::None)
+    !matches!(garbled_scope(page), GarbledScope::None) || page_has_unmapped_text(page)
+}
+
+/// True when text with a failed Unicode mapping is both a real amount (not a
+/// stray Type3 symbol glyph) and a real share of the page's native text.
+fn page_has_unmapped_text(page: &Page) -> bool {
+    let (unmapped, total) = page.text_items.iter().fold((0usize, 0usize), |(u, t), it| {
+        let n = it.text.chars().filter(|c| !c.is_whitespace()).count();
+        (u + if it.has_unicode_map_error { n } else { 0 }, t + n)
+    });
+    unmapped >= GARBLE_MIN_LETTERS && unmapped as f32 >= total as f32 * GARBLE_MIN_FONT_SHARE
 }
 
 /// Recover a discrete CCW rotation in degrees from a 4-point OCR polygon.
@@ -1630,6 +1667,14 @@ fn clean_ocr_table_artifacts(text: &str) -> String {
         || without_artifacts == "-";
 
     if is_numeric_ish {
+        // Parentheses directly around a number mark it negative, e.g. "(78,939)",
+        // so keep that pair; only what lies outside it is a border misread.
+        if let Some((before, after)) = trimmed.split_once(without_artifacts)
+            && before.ends_with('(')
+            && after.starts_with(')')
+        {
+            return format!("({without_artifacts})");
+        }
         without_artifacts.to_string()
     } else {
         trimmed.to_string()
@@ -1954,6 +1999,19 @@ mod tests {
         assert_eq!(clean_ocr_table_artifacts("|||"), "|||");
     }
 
+    #[test]
+    fn test_clean_ocr_keeps_accounting_negatives() {
+        // Parentheses around a number mark it negative (issue #468).
+        assert_eq!(clean_ocr_table_artifacts("(78,939)"), "(78,939)");
+        assert_eq!(clean_ocr_table_artifacts("(12.5%)"), "(12.5%)");
+        // Border misreads next to them are still removed.
+        assert_eq!(clean_ocr_table_artifacts("(78,939)|"), "(78,939)");
+        assert_eq!(clean_ocr_table_artifacts("|(78,939)]"), "(78,939)");
+        // A lone parenthesis is still treated as a border misread.
+        assert_eq!(clean_ocr_table_artifacts("78,939)"), "78,939");
+        assert_eq!(clean_ocr_table_artifacts("(78,939"), "78,939");
+    }
+
     fn make_item(x: f32, y: f32, w: f32, h: f32) -> TextItem {
         TextItem {
             text: "x".into(),
@@ -2172,6 +2230,51 @@ mod tests {
         assert!(page_is_garbled(&page));
     }
 
+    /// A page of unmappable text (PUA char-code fallback) has no ASCII letters
+    /// for the vowel ratio to judge, and every item is excluded from
+    /// `text_length` — it must still report as garbled.
+    #[test]
+    fn test_page_is_garbled_unmapped_text() {
+        let mut page = make_font_page(&[
+            (
+                "T3Font",
+                "\u{E001}\u{E002}\u{E003}\u{E004}\u{E005}\u{E006}\u{E007}\u{E008}",
+            ),
+            (
+                "T3Font",
+                "\u{E011}\u{E012}\u{E013}\u{E014}\u{E015}\u{E016}\u{E017}\u{E018}",
+            ),
+            (
+                "T3Font",
+                "\u{E021}\u{E022}\u{E023}\u{E024}\u{E025}\u{E026}\u{E027}\u{E028}",
+            ),
+            (
+                "T3Font",
+                "\u{E031}\u{E032}\u{E033}\u{E034}\u{E035}\u{E036}\u{E037}\u{E038}",
+            ),
+        ]);
+        for it in &mut page.text_items {
+            it.has_unicode_map_error = true;
+        }
+        assert!(matches!(garbled_scope(&page), GarbledScope::None));
+        assert_eq!(native_text_length(&page), 0);
+        assert!(page_is_garbled(&page));
+    }
+
+    /// A stray unmappable symbol glyph (e.g. a Type3 checkmark) on a healthy
+    /// page must not flag it.
+    #[test]
+    fn test_page_is_garbled_ignores_stray_unmapped_glyph() {
+        let mut items: Vec<(&str, &str)> = HEALTHY_PARAGRAPH
+            .iter()
+            .map(|t| ("Helvetica", *t))
+            .collect();
+        items.push(("T3Font", "\u{E001}"));
+        let mut page = make_font_page(&items);
+        page.text_items.last_mut().unwrap().has_unicode_map_error = true;
+        assert!(!page_is_garbled(&page));
+    }
+
     /// A small run of low-vowel text (acronyms, tickers, part numbers) in its
     /// own font must not flag an otherwise healthy page.
     #[test]
@@ -2222,9 +2325,17 @@ mod tests {
         language: &str,
         num_workers: usize,
         ocr_failure_fatal: bool,
+        emit_word_boxes: bool,
     ) -> Result<(), LiteParseError> {
         let outcomes = recognize_rasters(rendered, engine, language, num_workers).await;
-        merge_ocr_results(pages, outcomes, ocr_failure_fatal, 0.0, true)
+        merge_ocr_results(
+            pages,
+            outcomes,
+            ocr_failure_fatal,
+            0.0,
+            true,
+            emit_word_boxes,
+        )
     }
 
     // A page that already has substantial native text coverage, as would be the
@@ -2292,7 +2403,8 @@ mod tests {
         let rendered = vec![make_rendered(0), make_rendered(1)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true, false).await;
 
         let err = result.expect_err("expected systemic OCR failure to be surfaced");
         let msg = err.to_string();
@@ -2313,7 +2425,8 @@ mod tests {
         let mut pages = vec![make_blank_page(1)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, Vec::new(), engine, "eng", 2, true).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, Vec::new(), engine, "eng", 2, true, false).await;
 
         assert!(result.is_ok(), "empty OCR set should succeed: {result:?}");
     }
@@ -2327,7 +2440,8 @@ mod tests {
         let rendered = vec![make_rendered(0), make_rendered(1)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true, false).await;
 
         assert!(
             result.is_ok(),
@@ -2347,7 +2461,8 @@ mod tests {
         let rendered = vec![make_rendered(0), make_rendered(1)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true, false).await;
 
         let err = result.expect_err("a text-starved page losing all OCR must surface an error");
         assert!(
@@ -2365,7 +2480,8 @@ mod tests {
         let rendered = vec![make_rendered(0)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, true, false).await;
 
         let err = result.expect_err("low-coverage text page losing OCR must surface an error");
         assert!(
@@ -2384,7 +2500,8 @@ mod tests {
         let rendered = vec![make_rendered(0), make_rendered(1)];
         let engine: Arc<dyn OcrEngine> = Arc::new(FailingEngine);
 
-        let result = ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, false).await;
+        let result =
+            ocr_and_merge_rendered(&mut pages, rendered, engine, "eng", 2, false, false).await;
 
         assert!(
             result.is_ok(),
@@ -2392,5 +2509,62 @@ mod tests {
         );
         // The native-text page keeps its text; the blank page simply has no OCR.
         assert_eq!(pages[0].text_items.len(), 1);
+    }
+
+    /// An OCR-sourced `TextItem` must carry a word box the way a native one
+    /// does. The engine already reports one word per result (`RIL_WORD` for
+    /// Tesseract), so the item's own text and box are the word box. Without
+    /// it the projection pass has nothing to carry forward when it joins
+    /// neighbouring OCR items into a run, so a caller asking for word boxes
+    /// gets them on native text only and none on scanned pages (#473).
+    #[test]
+    fn test_ocr_items_carry_word_boxes_when_enabled() {
+        let outcome = |page_number: usize| PageOcrOutcome {
+            page_number,
+            dpi: 72.0,
+            has_native_text: false,
+            image_rects: Vec::new(),
+            results: vec![
+                OcrResult {
+                    text: "hello".into(),
+                    bbox: [10.0, 20.0, 60.0, 30.0],
+                    confidence: 0.9,
+                    polygon: None,
+                },
+                OcrResult {
+                    text: "world".into(),
+                    bbox: [62.0, 20.0, 110.0, 30.0],
+                    confidence: 0.9,
+                    polygon: None,
+                },
+            ],
+            error: None,
+        };
+
+        let mut enabled = vec![make_blank_page(1)];
+        merge_ocr_results(&mut enabled, vec![outcome(1)], false, 0.0, true, true).unwrap();
+        assert_eq!(enabled[0].text_items.len(), 2);
+        for item in &enabled[0].text_items {
+            assert_eq!(
+                item.words.len(),
+                1,
+                "OCR item {:?} should carry one word box",
+                item.text
+            );
+            let word = &item.words[0];
+            assert_eq!(word.text, item.text);
+            assert_eq!(
+                (word.x, word.y, word.width, word.height),
+                (item.x, item.y, item.width, item.height),
+                "the word box is the result's own box"
+            );
+        }
+
+        // The same input with word boxes off must stay allocation-free, as
+        // `LiteParseConfig::emit_word_boxes` promises for native text.
+        let mut disabled = vec![make_blank_page(1)];
+        merge_ocr_results(&mut disabled, vec![outcome(1)], false, 0.0, true, false).unwrap();
+        assert_eq!(disabled[0].text_items.len(), 2);
+        assert!(disabled[0].text_items.iter().all(|i| i.words.is_empty()));
     }
 }

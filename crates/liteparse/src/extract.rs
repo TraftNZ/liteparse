@@ -1620,6 +1620,7 @@ fn extract_page_text_items_with_mode(
         eprintln!("[extract-debug] char_count={char_count}, skip_invisible={skip_invisible}");
     }
 
+    let clips = crate::text_clip::TextClip::new(page);
     let page_rotation = page.rotation();
     let vp_xform = page.viewport_transform(view_box);
     let mut items: Vec<TextItem> = Vec::new();
@@ -1638,6 +1639,10 @@ fn extract_page_text_items_with_mode(
             ch: &ch,
             rec: char_chunks.as_mut().and_then(|chunks| chunks.record(i)),
         };
+        if clips.hides(&cv) {
+            seg.flush(&mut items);
+            continue;
+        }
         let unicode = cv.unicode();
         let is_generated = cv.is_generated();
         if mode == TextExtractionMode::PaintedObjects && !is_generated {

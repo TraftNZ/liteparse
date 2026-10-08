@@ -28,6 +28,8 @@ const MAX_MARKED_CONTENT_DEPTH: usize = 64;
 const PDF_TEXT_SCALE_PERCENT: f32 = 100.0;
 type ResourceValue<'a> = Option<(Option<ObjectId>, &'a Object)>;
 
+const MAX_LISTED_UNREADABLE: usize = 20;
+
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
@@ -1529,6 +1531,60 @@ pub fn capture_page_content(
 /// Reuse an open document for streaming multi-page extraction. The caller owns
 /// the PDFium library lock, so this does not initialize a second library.
 pub fn capture_loaded_page_content(
+    source: &SourceDocument,
+    page: &Page<'_, '_>,
+    page_number: u32,
+) -> Result<SourcePageContent, Box<dyn Error>> {
+    read_page_content(source, page, page_number).map_err(|error| {
+        let unreadable = unreadable_objects(source);
+        if unreadable.is_empty() {
+            return error;
+        }
+        invalid(format!(
+            "{error}; {} objects unreadable (xref damaged): {}",
+            unreadable.len(),
+            unreadable_list(&unreadable)
+        ))
+        .into()
+    })
+}
+
+/// Objects the cross-reference table places in the file that lopdf could not
+/// parse. lopdf drops them silently on load, so a page that needs one fails
+/// later as a bare ObjectNotFound with no hint that the table is the cause.
+fn unreadable_objects(source: &SourceDocument) -> Vec<u32> {
+    let mut missing: Vec<u32> = source
+        .reference_table
+        .entries
+        .iter()
+        .filter(|(number, entry)| {
+            matches!(entry, lopdf::xref::XrefEntry::Normal { .. })
+                && source
+                    .objects
+                    .range((**number, 0)..=(**number, u16::MAX))
+                    .next()
+                    .is_none()
+        })
+        .map(|(number, _)| *number)
+        .collect();
+    missing.sort_unstable();
+    missing
+}
+
+fn unreadable_list(numbers: &[u32]) -> String {
+    let mut list = numbers
+        .iter()
+        .take(MAX_LISTED_UNREADABLE)
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if numbers.len() > MAX_LISTED_UNREADABLE {
+        list.push_str(", ...");
+    }
+    list
+}
+
+fn read_page_content(
     source: &SourceDocument,
     page: &Page<'_, '_>,
     page_number: u32,

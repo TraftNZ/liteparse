@@ -172,3 +172,7 @@ Key files in `crates/liteparse/src/`:
 - [WASM package README](packages/wasm/README.md)
 - [Python package README](packages/python/README.md)
 - [OCR server examples](ocr/README.md)
+
+## Worktrees and Branches
+
+- Never create a git worktree (or a new branch) unless explicitly asked; always implement in the current worktree on its current branch.

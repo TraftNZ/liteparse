@@ -62,3 +62,5 @@ pub mod output;
 pub mod projection;
 #[doc(hidden)]
 pub mod render;
+#[cfg(all(feature = "detect", not(target_arch = "wasm32")))]
+pub mod detect;

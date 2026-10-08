@@ -42,6 +42,27 @@ enum Commands {
     /// Extract embedded image bounding boxes from a page [dev tool]
     #[command(hide = true)]
     ImageBounds(ExtractCommand),
+    /// Run an ONNX object detector (RF-DETR export) over an image, tiled; prints raw output tensors as JSON
+    Detect(DetectCommand),
+}
+
+#[derive(Args, Debug)]
+struct DetectCommand {
+    /// ONNX model path
+    #[arg(long)]
+    model: String,
+    /// Image path (PNG or JPEG)
+    #[arg(long)]
+    image: String,
+    /// Tile side in pixels
+    #[arg(long, default_value_t = 1024)]
+    tile_px: u32,
+    /// Overlap between neighbouring tiles in pixels
+    #[arg(long, default_value_t = 128)]
+    overlap_px: u32,
+    /// ONNX Runtime intra-op threads
+    #[arg(long, default_value_t = 2)]
+    threads: usize,
 }
 
 #[derive(Args, Debug)]
@@ -782,6 +803,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Commands::ImageBounds(cmd) => {
             render::image_bounds(&cmd.pdf_path, cmd.page_num)?;
+        }
+
+        Commands::Detect(cmd) => {
+            #[cfg(feature = "detect")]
+            {
+                let report = liteparse::detect::detect(
+                    std::path::Path::new(&cmd.model),
+                    std::path::Path::new(&cmd.image),
+                    liteparse::detect::DetectOptions {
+                        tile_px: cmd.tile_px,
+                        overlap_px: cmd.overlap_px,
+                        threads: cmd.threads,
+                    },
+                )?;
+                println!("{}", serde_json::to_string(&report)?);
+            }
+            #[cfg(not(feature = "detect"))]
+            {
+                let _ = cmd;
+                return Err("lit detect: built without the detect feature".into());
+            }
         }
 
         Commands::IsComplex(cmd) => {

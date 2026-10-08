@@ -2033,6 +2033,7 @@ dependencies = [
  "memchr",
  "oar-ocr",
  "ordered-float",
+ "ort",
  "regex",
  "reqwest 0.13.4",
  "resvg",

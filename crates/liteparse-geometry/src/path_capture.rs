@@ -80,11 +80,7 @@ impl PathCapture {
         if style.clip_depth > 0 && style.clip_bbox.len() != 4 {
             return Err("active clip requires a four-coordinate bounding box".into());
         }
-        if style.clip_depth > 0
-            && (!style.clip_bbox.iter().all(|value| value.is_finite())
-                || style.clip_bbox[0] > style.clip_bbox[2]
-                || style.clip_bbox[1] > style.clip_bbox[3])
-        {
+        if style.clip_depth > 0 && !style.clip_bbox.iter().all(|value| value.is_finite()) {
             return Err("active clip has invalid bounds".into());
         }
         let style = Arc::new(style);
@@ -224,7 +220,11 @@ impl PathCapture {
     }
 
     fn add_line(&mut self, from: [f64; 2], to: [f64; 2], style: &Arc<PaintStyle>) {
-        let visible = if style.clip_depth > 0 {
+        // Nested clips that do not overlap intersect to an empty region, which
+        // paints nothing.
+        let visible = if style.clip_depth > 0 && clip_is_empty(&style.clip_bbox) {
+            None
+        } else if style.clip_depth > 0 {
             clip_line(from, to, &style.clip_bbox)
         } else {
             Some((from, to))
@@ -271,6 +271,10 @@ impl PathCapture {
         self.flatten_curve([points[0], a, d, f], depth + 1, style, transform);
         self.flatten_curve([f, e, c, points[3]], depth + 1, style, transform);
     }
+}
+
+fn clip_is_empty(rect: &[f64]) -> bool {
+    rect[0] > rect[2] || rect[1] > rect[3]
 }
 
 fn clip_code(point: [f64; 2], rect: &[f64]) -> u8 {
@@ -537,6 +541,26 @@ mod tests {
         assert!(capture.paths.iter().all(|path| path.closed));
         assert_eq!(capture.segments[0].owner_path, 1);
         assert_eq!(capture.segments[3].owner_path, 2);
+    }
+
+    #[test]
+    fn disjoint_nested_clips_paint_nothing() {
+        let object = path(
+            vec![
+                command(SegmentKind::MoveTo, 10.0, 10.0, false),
+                command(SegmentKind::LineTo, 90.0, 10.0, false),
+            ],
+            false,
+            true,
+        );
+        let style = PaintStyle {
+            clip_depth: 2,
+            clip_bbox: vec![100.0, 0.0, 80.0, 200.0],
+            ..PaintStyle::default()
+        };
+        let mut capture = PathCapture::default();
+        capture.paint(&object, &style).unwrap();
+        assert!(capture.segments.is_empty());
     }
 
     #[test]

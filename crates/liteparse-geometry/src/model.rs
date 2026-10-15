@@ -118,6 +118,9 @@ pub struct TextSpan {
     pub font_name: String,
     #[serde(default, skip_serializing_if = "is_zero_f64")]
     pub rotation: f64,
+    /// RGB fill colour of the text, each channel 0..1; empty when unreadable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fill_color: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Deserialize, Serialize)]
@@ -245,7 +248,7 @@ pub struct ViewportScale {
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 12;
+pub const EXTRACTOR_VERSION: u32 = 13;
 
 #[cfg(test)]
 mod tests {

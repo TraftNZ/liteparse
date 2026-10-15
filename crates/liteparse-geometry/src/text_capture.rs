@@ -197,6 +197,10 @@ pub struct TextToken {
     pub glyph_frames: Vec<GlyphFrame>,
     #[serde(default, skip_serializing)]
     pub vertical_writing: bool,
+    /// Fill colour of the item's first character as an ARGB hex string
+    /// (e.g. "ff0000ff"), as the text extractor reports it.
+    #[serde(default, skip_serializing)]
+    pub fill_color: Option<String>,
     #[serde(default, skip_serializing)]
     pub font_metrics: Option<[f64; 2]>,
 }
@@ -434,7 +438,36 @@ fn make_span(tokens: &[&TextToken]) -> TextSpan {
         font_size,
         font_name: first.font_name.clone().unwrap_or_default(),
         rotation: first.normalized_rotation(),
+        fill_color: first
+            .fill_color
+            .as_deref()
+            .map(rgb_from_argb_hex)
+            .unwrap_or_default(),
     }
+}
+
+/// Top of an 8-bit colour channel, to put one on the 0..1 scale PDF colours use.
+const FILL_CHANNEL_MAX: f64 = 255.0;
+/// Hex digits of an ARGB string, and where its red channel starts.
+const ARGB_HEX_DIGITS: usize = 8;
+const ARGB_RGB_OFFSET: usize = 2;
+const HEX_DIGITS_PER_CHANNEL: usize = 2;
+
+/// Reads the RGB channels, each 0..1, out of an ARGB hex string; empty when the
+/// string is not one, so a colour that cannot be read is never guessed.
+fn rgb_from_argb_hex(argb: &str) -> Vec<f64> {
+    if argb.len() != ARGB_HEX_DIGITS || !argb.is_ascii() {
+        return Vec::new();
+    }
+    let channels: Option<Vec<f64>> = (0..3)
+        .map(|channel| {
+            let at = ARGB_RGB_OFFSET + channel * HEX_DIGITS_PER_CHANNEL;
+            u8::from_str_radix(&argb[at..at + HEX_DIGITS_PER_CHANNEL], 16)
+                .ok()
+                .map(|value| f64::from(value) / FILL_CHANNEL_MAX)
+        })
+        .collect();
+    channels.unwrap_or_default()
 }
 
 #[derive(Default)]
@@ -1074,6 +1107,7 @@ fn source_text_token(
         glyph_vertical_size: frames.first().map(|frame| frame.vertical[1].abs()),
         glyph_frames: frames,
         vertical_writing: false,
+        fill_color: None,
         font_metrics: None,
     })
 }
@@ -1983,8 +2017,20 @@ mod tests {
             glyph_vertical_size: None,
             glyph_frames: Vec::new(),
             vertical_writing: false,
+            fill_color: None,
             font_metrics: None,
         }
+    }
+
+    #[test]
+    fn a_span_carries_the_fill_colour_of_its_first_token() {
+        let mut blue = token("HOUSE PILE SPACING", 0.0, 0.0);
+        blue.fill_color = Some("ff0000ff".into());
+        let spans = group_text_tokens(&[blue]);
+        assert_eq!(spans[0].fill_color, vec![0.0, 0.0, 1.0]);
+        let spans = group_text_tokens(&[token("NOTES", 0.0, 0.0)]);
+        assert!(spans[0].fill_color.is_empty());
+        assert!(rgb_from_argb_hex("zz").is_empty());
     }
 
     #[test]

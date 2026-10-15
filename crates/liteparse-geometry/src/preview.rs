@@ -276,6 +276,7 @@ mod tests {
                     font_size: 10.0,
                     font_name: "Helvetica".into(),
                     rotation: 0.0,
+                    fill_color: Vec::new(),
                 })
                 .collect(),
         );

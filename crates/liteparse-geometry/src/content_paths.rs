@@ -248,6 +248,8 @@ struct GraphicsState {
     dash_array: Vec<f64>,
     dash_phase: f64,
     clip_depth: usize,
+    // PDF graphics-state clip survives image masks; capture callback pops do not.
+    image_clip: Option<[f64; 4]>,
     stroke_pattern: String,
     fill_pattern: String,
     form_name: String,
@@ -288,6 +290,7 @@ impl Default for GraphicsState {
             dash_array: Vec::new(),
             dash_phase: 0.0,
             clip_depth: 0,
+            image_clip: None,
             stroke_pattern: String::new(),
             fill_pattern: String::new(),
             form_name: String::new(),
@@ -509,6 +512,43 @@ impl CurrentPath {
     }
 }
 
+fn intersect_bounds(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    [
+        a[0].max(b[0]),
+        a[1].max(b[1]),
+        a[2].min(b[2]),
+        a[3].min(b[3]),
+    ]
+}
+
+/// Union of enclosing rectangles remains an upper bound for rotated images and
+/// nonrectangular clips. Overlapping paint operations count the page area once.
+fn rectangle_union_area(rectangles: &[[f64; 4]]) -> f64 {
+    let mut edges: Vec<f64> = rectangles.iter().flat_map(|r| [r[0], r[2]]).collect();
+    edges.sort_unstable_by(f64::total_cmp);
+    edges.dedup();
+    let mut intervals = Vec::with_capacity(rectangles.len());
+    let mut area = 0.0;
+    for pair in edges.windows(2) {
+        intervals.clear();
+        intervals.extend(
+            rectangles
+                .iter()
+                .filter(|r| r[0] < pair[1] && r[2] > pair[0])
+                .map(|r| (r[1], r[3])),
+        );
+        intervals.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        let mut covered = 0.0;
+        let mut previous_end = f64::NEG_INFINITY;
+        for &(start, end) in &intervals {
+            covered += (end - start.max(previous_end)).max(0.0);
+            previous_end = previous_end.max(end);
+        }
+        area += (pair[1] - pair[0]) * covered;
+    }
+    area
+}
+
 struct StreamReader<'a> {
     source: &'a SourceDocument,
     capture: PathCapture,
@@ -519,7 +559,7 @@ struct StreamReader<'a> {
     active_patterns: Vec<ObjectId>,
     page_bounds: [f64; 4],
     image_ops: usize,
-    image_area: f64,
+    image_bounds: Vec<[f64; 4]>,
     text_line_corrections: Vec<[f64; 2]>,
     text_paints: Vec<SourceTextPaint>,
     next_text_run: usize,
@@ -575,6 +615,11 @@ pub struct SourcePageContent {
 
 impl<'a> StreamReader<'a> {
     fn push_clip(&mut self, state: &mut GraphicsState, bounds: [f64; 4]) {
+        state.image_clip = Some(
+            state
+                .image_clip
+                .map_or(bounds, |clip| intersect_bounds(clip, bounds)),
+        );
         state.clip_depth += 1;
         let bounds = self.capture_clips.last().map_or(bounds, |current| {
             [
@@ -1201,14 +1246,33 @@ impl<'a> StreamReader<'a> {
     fn record_image(&mut self, state: &GraphicsState) {
         self.image_ops += 1;
         let box_points = self.transform_box(state.ctm, [0.0, 0.0, 1.0, 1.0]);
-        let bounds = [
-            box_points[0].max(self.page_bounds[0]),
-            box_points[1].max(self.page_bounds[1]),
-            box_points[2].min(self.page_bounds[2]),
-            box_points[3].min(self.page_bounds[3]),
-        ];
-        if bounds[2] > bounds[0] && bounds[3] > bounds[1] {
-            self.image_area += (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]);
+        let mut bounds = intersect_bounds(box_points, self.page_bounds);
+        if let Some(clip) = state.image_clip {
+            bounds = intersect_bounds(bounds, clip);
+        }
+        self.record_image_bounds(bounds);
+    }
+
+    fn record_image_bounds(&mut self, bounds: [f64; 4]) {
+        if bounds[2] <= bounds[0] || bounds[3] <= bounds[1] {
+            return;
+        }
+        // Bound pathological input cost. Collapsing to an enclosing box can
+        // overestimate raster coverage, but must never hide a raster gap.
+        const MAX_IMAGE_BOUNDS: usize = 4096;
+        if self.image_bounds.len() >= MAX_IMAGE_BOUNDS {
+            let enclosing = self.image_bounds.iter().fold(bounds, |a, b| {
+                [
+                    a[0].min(b[0]),
+                    a[1].min(b[1]),
+                    a[2].max(b[2]),
+                    a[3].max(b[3]),
+                ]
+            });
+            self.image_bounds.clear();
+            self.image_bounds.push(enclosing);
+        } else {
+            self.image_bounds.push(bounds);
         }
     }
 
@@ -1361,7 +1425,17 @@ impl<'a> StreamReader<'a> {
         } else {
             stream.content.clone()
         };
+        // The stream is one tile, not every repeated placement. If it paints
+        // raster data, conservatively cover the complete clipped pattern fill.
+        let image_ops_before = self.image_ops;
+        let pattern_bounds = intersect_bounds(
+            tile.image_clip.unwrap_or(self.page_bounds),
+            self.page_bounds,
+        );
         let result = self.process(&bytes, &nested_resources, tile);
+        if self.image_ops > image_ops_before {
+            self.record_image_bounds(pattern_bounds);
+        }
         self.capture_clips.pop();
         if id.is_some() {
             self.active_patterns.pop();
@@ -1609,7 +1683,7 @@ fn read_page_content(
         active_patterns: Vec::new(),
         page_bounds: [0.0, 0.0, f64::from(width_pts), f64::from(height_pts)],
         image_ops: 0,
-        image_area: 0.0,
+        image_bounds: Vec::new(),
         text_line_corrections: Vec::new(),
         text_paints: Vec::new(),
         next_text_run: 1,
@@ -1641,7 +1715,7 @@ fn read_page_content(
         text_line_corrections: reader.text_line_corrections,
         text_paints: reader.text_paints,
         image_coverage: image_coverage(
-            reader.image_area,
+            rectangle_union_area(&reader.image_bounds),
             f64::from(width_pts),
             f64::from(height_pts),
         ),
@@ -1744,7 +1818,7 @@ mod tests {
             active_patterns: Vec::new(),
             page_bounds: [0.0; 4],
             image_ops: 0,
-            image_area: 0.0,
+            image_bounds: Vec::new(),
             text_line_corrections: Vec::new(),
             text_paints: Vec::new(),
             next_text_run: 1,
@@ -1793,11 +1867,149 @@ mod tests {
             active_patterns: Vec::new(),
             page_bounds: [0.0, 0.0, 100.0, 100.0],
             image_ops: 0,
-            image_area: 0.0,
+            image_bounds: Vec::new(),
             text_line_corrections: Vec::new(),
             text_paints: Vec::new(),
             next_text_run: 1,
         }
+    }
+
+    #[test]
+    #[ignore = "requires the real Platinum drawing calibration PDF"]
+    fn platinum_section_retains_its_pagewide_raster_gap() {
+        let path = std::env::var_os("PLATINUM_PDF").expect("PLATINUM_PDF calibration source");
+        let page = capture_page_content(Path::new(&path), 15).unwrap();
+        assert_eq!(page.image_ops, 80);
+        assert!(page.image_coverage > 0.99 && page.image_coverage <= 1.0);
+    }
+
+    fn image_reader_area(content: &[u8]) -> (usize, f64) {
+        use lopdf::{Stream, dictionary};
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "XObject" => dictionary! {
+                "I" => Stream::new(dictionary! {"Subtype" => "Image"}, Vec::new())
+            }
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(content, &[&resources], GraphicsState::default())
+            .unwrap();
+        (reader.image_ops, rectangle_union_area(&reader.image_bounds))
+    }
+
+    #[test]
+    fn repeated_and_overlapping_images_count_the_union_once() {
+        let (ops, area) =
+            image_reader_area(b"q 20 0 0 20 10 10 cm /I Do /I Do Q q 20 0 0 20 20 10 cm /I Do Q");
+        assert_eq!(ops, 3);
+        assert_eq!(area, 600.0);
+        assert_eq!(
+            image_reader_area(b"q 100 0 0 100 0 0 cm /I Do /I Do Q").1,
+            10000.0
+        );
+    }
+
+    #[test]
+    fn image_coverage_obeys_nested_clips_and_graphics_restore() {
+        let (ops, area) = image_reader_area(
+            b"q 10 10 20 20 re W n q 10 10 10 10 re W n 100 0 0 100 0 0 cm /I Do Q \
+              q 100 0 0 100 0 0 cm /I Do Q Q q 10 0 0 10 80 80 cm /I Do Q",
+        );
+        assert_eq!(ops, 3);
+        assert_eq!(area, 500.0);
+        assert_eq!(
+            image_reader_area(b"q 110 110 10 10 re W n 100 0 0 100 0 0 cm /I Do Q").1,
+            0.0
+        );
+    }
+
+    #[test]
+    fn image_coverage_transforms_image_and_clip_bounds_conservatively() {
+        // A rotated square is enclosed rather than underestimated; the clip is
+        // transformed when established, before the subsequent image matrix.
+        assert_eq!(
+            image_reader_area(b"q 10 10 -10 10 50 50 cm /I Do Q").1,
+            400.0
+        );
+        assert_eq!(
+            image_reader_area(b"q 2 0 0 2 10 10 cm 0 0 10 20 re W n 100 0 0 100 0 0 cm /I Do Q").1,
+            800.0
+        );
+        assert_eq!(
+            image_reader_area(b"q 100 0 0 100 -50 -50 cm /I Do Q").1,
+            2500.0
+        );
+    }
+
+    #[test]
+    fn form_bounds_and_masks_preserve_saved_image_clip() {
+        use lopdf::{Stream, dictionary};
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "XObject" => dictionary! {
+                "F" => Stream::new(dictionary! {
+                    "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 20.into()],
+                    "Matrix" => vec![2.into(), 0.into(), 0.into(), 2.into(), 10.into(), 10.into()],
+                    "Resources" => dictionary! {
+                        "XObject" => dictionary! {
+                            "I" => Stream::new(dictionary! {"Subtype" => "Image",
+                                "SMask" => Stream::new(dictionary! {}, Vec::new())}, Vec::new())
+                        }
+                    }
+                }, b"100 0 0 100 0 0 cm /I Do /I Do".to_vec())
+            }
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(b"/F Do", &[&resources], GraphicsState::default())
+            .unwrap();
+        assert_eq!(reader.image_ops, 2);
+        assert_eq!(rectangle_union_area(&reader.image_bounds), 800.0);
+    }
+
+    #[test]
+    fn nonrectangular_clip_and_coverage_limit_never_underestimate() {
+        assert_eq!(
+            image_reader_area(b"q 0 0 m 10 0 l 0 10 l h W n 100 0 0 100 0 0 cm /I Do Q").1,
+            100.0
+        );
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+        for _ in 0..5000 {
+            reader.record_image_bounds([0.0, 0.0, 10.0, 10.0]);
+        }
+        reader.record_image_bounds([90.0, 90.0, 100.0, 100.0]);
+        assert!(reader.image_bounds.len() < 4096);
+        assert!(rectangle_union_area(&reader.image_bounds) >= 200.0);
+    }
+
+    #[test]
+    fn raster_pattern_covers_repeated_fill_not_only_first_tile() {
+        use lopdf::{Stream, dictionary};
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "Pattern" => dictionary! {
+                "P0" => Stream::new(dictionary! {
+                    "PatternType" => 1,
+                    "Resources" => dictionary! {
+                        "XObject" => dictionary! {
+                            "I" => Stream::new(dictionary! {"Subtype" => "Image"}, Vec::new())
+                        }
+                    }
+                }, b"10 0 0 10 10 10 cm /I Do".to_vec())
+            }
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(
+                PATTERN_FILL_CONTENT,
+                &[&resources],
+                GraphicsState::default(),
+            )
+            .unwrap();
+        assert_eq!(reader.image_ops, 1);
+        assert_eq!(rectangle_union_area(&reader.image_bounds), 600.0);
     }
 
     const PATTERN_FILL_CONTENT: &[u8] = b"/Pattern cs /P0 scn 10 10 30 20 re f";

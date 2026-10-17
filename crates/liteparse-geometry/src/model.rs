@@ -57,6 +57,9 @@ pub struct PaintStyle {
     pub tile_ctm: Vec<f64>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub layer: String,
+    /// One-based page-local marked-content occurrence, never a building identity.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub marked_group: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -179,6 +182,8 @@ pub struct VertexRef {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PageGeometry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observations: Option<crate::observations::PageObservations>,
     pub version: u32,
     pub page: u32,
     pub width_pts: f64,
@@ -248,7 +253,7 @@ pub struct ViewportScale {
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 13;
+pub const EXTRACTOR_VERSION: u32 = 14;
 
 #[cfg(test)]
 mod tests {

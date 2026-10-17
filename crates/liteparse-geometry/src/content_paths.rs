@@ -12,6 +12,7 @@ use pdfium::{Library, Page, PathSegment, SegmentKind, ViewportTransform};
 
 use crate::classify::image_coverage;
 use crate::model::{PaintStyle, Viewport};
+use crate::observations::{MarkedGroup, PageObservations, read_page_observations};
 use crate::path_capture::PathCapture;
 use crate::viewports::read_page_viewports;
 
@@ -555,6 +556,8 @@ struct StreamReader<'a> {
     capture_clips: Vec<[f64; 4]>,
     layers: Vec<String>,
     marked_content: Vec<Arc<[u8]>>,
+    marked_group_stack: Vec<usize>,
+    marked_groups: Vec<MarkedGroup>,
     active_forms: Vec<ObjectId>,
     active_patterns: Vec<ObjectId>,
     page_bounds: [f64; 4],
@@ -611,6 +614,7 @@ pub struct SourcePageContent {
     pub text_paints: Vec<SourceTextPaint>,
     pub viewports: Vec<Viewport>,
     pub viewports_error: Option<String>,
+    pub observations: PageObservations,
 }
 
 impl<'a> StreamReader<'a> {
@@ -634,6 +638,7 @@ impl<'a> StreamReader<'a> {
 
     fn paint_style(&self, state: &GraphicsState, fill: bool, layer: &str) -> PaintStyle {
         let mut style = state.paint_style(fill, layer);
+        style.marked_group = self.marked_group_stack.last().copied().unwrap_or_default();
         style.clip_depth = self.capture_clips.len();
         style.clip_bbox = self
             .capture_clips
@@ -1115,14 +1120,14 @@ impl<'a> StreamReader<'a> {
                     if self.layers.len() >= MAX_MARKED_CONTENT_DEPTH {
                         return Err(invalid("marked content nesting limit exceeded").into());
                     }
-                    self.push_marked_content(resources, &operation)?;
+                    self.push_marked_content(resources, &operation, &state)?;
                     self.layers.push(String::new());
                 }
                 "BDC" => {
                     if self.layers.len() >= MAX_MARKED_CONTENT_DEPTH {
                         return Err(invalid("marked content nesting limit exceeded").into());
                     }
-                    self.push_marked_content(resources, &operation)?;
+                    self.push_marked_content(resources, &operation, &state)?;
                     self.layers
                         .push(self.resolve_layer(resources, operands)?.unwrap_or_default());
                 }
@@ -1131,6 +1136,11 @@ impl<'a> StreamReader<'a> {
                         .pop()
                         .ok_or_else(|| invalid("unbalanced marked content end"))?;
                     self.marked_content.pop();
+                    if let Some(index) = self.marked_group_stack.pop() {
+                        let group = &mut self.marked_groups[index - 1];
+                        group.path_end = self.capture.paths.len();
+                        group.text_end = self.text_paints.len();
+                    }
                 }
                 "BI" => self.record_image(&state),
                 "Do" => self.process_xobject(resources, &state, &name(operand(operands, 0)?)?)?,
@@ -1197,6 +1207,7 @@ impl<'a> StreamReader<'a> {
         &mut self,
         resources: &[&lopdf::Dictionary],
         operation: &lopdf::content::Operation,
+        state: &GraphicsState,
     ) -> Result<(), Box<dyn Error>> {
         let mut resolved = operation.clone();
         if let Some(Object::Name(key)) = resolved.operands.get(1)
@@ -1204,6 +1215,52 @@ impl<'a> StreamReader<'a> {
         {
             resolved.operands[1] = value.clone();
         }
+        let encoded = Content {
+            operations: vec![resolved.clone()],
+        }
+        .encode()?;
+        let (source, source_hex) = match String::from_utf8(encoded) {
+            Ok(text) => (text, None),
+            Err(error) => (
+                String::new(),
+                Some(
+                    error
+                        .into_bytes()
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                ),
+            ),
+        };
+        let tag = resolved
+            .operands
+            .first()
+            .and_then(|v| v.as_name().ok())
+            .map(|v| String::from_utf8_lossy(v).into_owned())
+            .unwrap_or_default();
+        let (view_matrix, view_matrix_error) =
+            match crate::observations::read_marked_view(self.source, &resolved) {
+                Ok(value) => (value, None),
+                Err(error) => (None, Some(error)),
+            };
+        let index = self.marked_groups.len() + 1;
+        self.marked_groups.push(MarkedGroup {
+            view_matrix,
+            view_matrix_error,
+            index,
+            parent: self.marked_group_stack.last().copied().unwrap_or_default(),
+            tag,
+            source,
+            source_hex,
+            ctm: state.ctm.0.map(f64::from),
+            path_begin: self.capture.paths.len(),
+            path_end: self.capture.paths.len(),
+            text_begin: self.text_paints.len(),
+            text_end: self.text_paints.len(),
+            form_ref: state.form_ref.clone(),
+            clip_bbox: self.capture_clips.last().copied(),
+        });
+        self.marked_group_stack.push(index);
         let mut context = self
             .marked_content
             .last()
@@ -1679,6 +1736,8 @@ fn read_page_content(
         capture_clips: Vec::new(),
         layers: Vec::new(),
         marked_content: Vec::new(),
+        marked_group_stack: Vec::new(),
+        marked_groups: Vec::new(),
         active_forms: Vec::new(),
         active_patterns: Vec::new(),
         page_bounds: [0.0, 0.0, f64::from(width_pts), f64::from(height_pts)],
@@ -1705,7 +1764,23 @@ fn read_page_content(
         Ok(viewports) => (viewports, None),
         Err(error) => (Vec::new(), Some(error.to_string())),
     };
+    let mut observations = read_page_observations(source, page_id, |x, y| {
+        let (x, y) = viewport.transform_point(x as f32, y as f32);
+        (f64::from(x), f64::from(y))
+    });
+    for index in &reader.marked_group_stack {
+        let group = &mut reader.marked_groups[*index - 1];
+        group.path_end = reader.capture.paths.len();
+        group.text_end = reader.text_paints.len();
+    }
+    if !reader.marked_group_stack.is_empty() {
+        observations
+            .errors
+            .push("unclosed marked-content groups".into());
+    }
+    observations.marked_groups = reader.marked_groups;
     Ok(SourcePageContent {
+        observations,
         paths: reader.capture,
         viewports,
         viewports_error,
@@ -1814,6 +1889,8 @@ mod tests {
             capture_clips: Vec::new(),
             layers: Vec::new(),
             marked_content: Vec::new(),
+            marked_group_stack: Vec::new(),
+            marked_groups: Vec::new(),
             active_forms: Vec::new(),
             active_patterns: Vec::new(),
             page_bounds: [0.0; 4],
@@ -1863,6 +1940,8 @@ mod tests {
             capture_clips: Vec::new(),
             layers: Vec::new(),
             marked_content: Vec::new(),
+            marked_group_stack: Vec::new(),
+            marked_groups: Vec::new(),
             active_forms: Vec::new(),
             active_patterns: Vec::new(),
             page_bounds: [0.0, 0.0, 100.0, 100.0],
@@ -2142,5 +2221,45 @@ mod tests {
             assert_eq!(viewport.compose(source).apply(point), expected);
             assert_ne!(viewport.apply(source.apply(point)), expected);
         }
+    }
+    #[test]
+    fn marked_occurrences_retain_resolved_view_matrix_and_native_path_ranges() {
+        use lopdf::dictionary;
+        let source = SourceDocument::with_version("1.7");
+        let properties = dictionary! {"MC0"=>dictionary!{"UNITS"=>Object::string_literal("mm"),"PRECISION"=>5,"VP"=>vec![1.into(),0.into(),0.into(),12.into(),0.into(),1.into(),0.into(),13.into(),0.into(),0.into(),1.into(),14.into(),0.into(),0.into(),0.into(),1.into()]}};
+        let resources = dictionary! {"Properties"=>properties};
+        let mut reader = StreamReader {
+            source: &source,
+            capture: PathCapture::default(),
+            capture_clips: Vec::new(),
+            layers: Vec::new(),
+            marked_content: Vec::new(),
+            marked_group_stack: Vec::new(),
+            marked_groups: Vec::new(),
+            active_forms: Vec::new(),
+            active_patterns: Vec::new(),
+            page_bounds: [0.0, 0.0, 100.0, 100.0],
+            image_ops: 0,
+            image_bounds: Vec::new(),
+            text_line_corrections: Vec::new(),
+            text_paints: Vec::new(),
+            next_text_run: 1,
+        };
+        reader.process(b"2 0 0 2 4 5 cm /ViewRegion312-1 /MC0 BDC /Element25798649 BMC 0 0 m 10 0 l S EMC EMC",&[&resources],GraphicsState::default()).unwrap();
+        assert_eq!(reader.marked_groups.len(), 2);
+        let view = &reader.marked_groups[0];
+        assert_eq!(view.tag, "ViewRegion312-1");
+        assert_eq!(view.ctm, [2.0, 0.0, 0.0, 2.0, 4.0, 5.0]);
+        assert_eq!(view.view_matrix.as_ref().unwrap().matrix[11], 14.0);
+        assert_eq!(
+            view.view_matrix.as_ref().unwrap().units.as_deref(),
+            Some("mm")
+        );
+        let element = &reader.marked_groups[1];
+        assert_eq!(element.tag, "Element25798649");
+        assert_eq!(element.parent, view.index);
+        assert_eq!((element.path_begin, element.path_end), (0, 1));
+        assert_eq!(reader.capture.paths[0].style.marked_group, element.index);
+        assert_eq!(reader.capture.segments[0].style.marked_group, element.index);
     }
 }

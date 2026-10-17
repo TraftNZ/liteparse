@@ -24,6 +24,7 @@ pub mod geometry;
 mod inline_images;
 pub mod measurement;
 pub mod model;
+pub mod observations;
 pub mod operation;
 pub mod path_capture;
 pub mod preview;

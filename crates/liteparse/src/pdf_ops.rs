@@ -11,6 +11,9 @@ use pdfium::{
 };
 use serde::{Deserialize, Serialize};
 
+#[path = "pdf_region_ocr.rs"]
+mod region_ocr;
+
 const SCHEMA_VERSION: u32 = 1;
 const POINTS_PER_INCH: f64 = 72.0;
 const MAX_PIXMAP_BYTES: u64 = 150 * 1024 * 1024;
@@ -33,6 +36,7 @@ enum PdfOperation {
     RenderScale,
     NativeClip,
     ExtractImages,
+    RecognizeRegions,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +52,7 @@ struct PdfRequest {
     rect: Option<[f64; 4]>,
     geometry: Option<liteparse_geometry::operation::GeometryOptions>,
     measurement: Option<liteparse_geometry::measurement::MeasurementOptions>,
+    recognition: Option<region_ocr::RecognitionOptions>,
 }
 
 #[derive(Debug, Serialize)]
@@ -87,6 +92,8 @@ struct PdfResponse {
     images: Option<Vec<PageImage>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     measurement: Option<liteparse_geometry::measurement::Measurement>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recognition: Option<region_ocr::RecognitionResult>,
 }
 
 fn capture_geometry_text(
@@ -534,8 +541,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         image: None,
         images: None,
         measurement: None,
+        recognition: None,
     };
     match request.operation {
+        PdfOperation::RecognizeRegions => {
+            let number = page_number(&request, total_pages)?;
+            let options = request
+                .recognition
+                .as_ref()
+                .ok_or_else(|| invalid("recognition is required"))?;
+            let page = document.page(number as i32 - 1)?;
+            let (width, height) = page_size(&page)?;
+            let dpi = safe_dpi(requested_dpi(&request, DEFAULT_RENDER_DPI)?, width, height)?;
+            region_ocr::validate(options)?;
+            let rendered = full_render(&page, dpi)?;
+            response.recognition = Some(region_ocr::recognize(
+                rendered, options, width, height, dpi,
+            )?);
+        }
         PdfOperation::Measure => {
             let number = page_number(&request, total_pages)?;
             if request.page_numbers.is_some() {

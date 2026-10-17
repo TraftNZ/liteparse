@@ -225,6 +225,7 @@ mod tests {
     fn page() -> PageGeometry {
         PageGeometry {
             version: crate::model::EXTRACTOR_VERSION,
+            observations: None,
             page: 1,
             width_pts: 100.0,
             height_pts: 100.0,

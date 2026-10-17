@@ -234,6 +234,36 @@ impl OarOcrEngine {
         }
     }
 
+    /// Recognize a bounded crop batch without rebuilding the model for each crop.
+    /// The caller owns page rendering, orientation and source-coordinate mapping.
+    pub fn recognize_images(
+        &self,
+        images: Vec<image::RgbImage>,
+    ) -> Result<Vec<Vec<OcrResult>>, LiteParseError> {
+        const MAX_CROP_BATCH: usize = 8;
+        if images.is_empty() || images.len() > MAX_CROP_BATCH {
+            return Err(LiteParseError::Ocr("crop batch needs 1..=8 images".into()));
+        }
+        let count = images.len();
+        let runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| LiteParseError::Ocr("OCR runtime mutex poisoned".into()))?;
+        let predictions = runtime.predict(images)?;
+        if predictions.len() != count {
+            return Err(LiteParseError::Ocr("OCR omitted a requested crop".into()));
+        }
+        Ok(predictions
+            .into_iter()
+            .map(|p| {
+                p.text_regions
+                    .into_iter()
+                    .filter_map(region_to_result)
+                    .collect()
+            })
+            .collect())
+    }
+
     fn recognize_sync(
         &self,
         image_data: &[u8],

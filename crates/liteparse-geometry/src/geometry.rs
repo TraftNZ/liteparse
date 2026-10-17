@@ -16,6 +16,7 @@ pub fn assemble_vector_page(
     let class = classify(paths.path_ops, content.image_ops, text_spans.len()).to_owned();
     PageGeometry {
         version: EXTRACTOR_VERSION,
+        observations: Some(content.observations),
         page: page_number,
         width_pts: content.width_pts,
         height_pts: content.height_pts,

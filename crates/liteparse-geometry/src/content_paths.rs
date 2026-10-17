@@ -1342,27 +1342,49 @@ impl<'a> StreamReader<'a> {
         let Some((id, object)) = self.resource(resources, b"XObject", key.as_bytes())? else {
             return Err(invalid(format!("missing XObject {key}")).into());
         };
-        let stream = object.as_stream()?.clone();
-        match stream.dict.get(b"Subtype")?.as_name()? {
+        let dictionary = match object {
+            Object::Stream(stream) => &stream.dict,
+            Object::Dictionary(dictionary)
+                if dictionary.get(b"Subtype")?.as_name()? == b"Image" =>
+            {
+                dictionary
+            }
+            _ => return Err(invalid(format!("XObject {key} requires a content stream")).into()),
+        };
+        match dictionary.get(b"Subtype")?.as_name()? {
             b"Image" => {
-                self.record_image(state);
+                if matches!(object, Object::Dictionary(_)) {
+                    validate_image_dimensions(dictionary)?;
+                }
+                // Geometry records the image footprint, never its encoded pixels.
+                // Some producers pad endstream with several blank lines; lopdf
+                // retains their image dictionary while rejecting the stream.
+                // Its dimensions and CTM still prove raster coverage, so retain
+                // that coverage without claiming native paths for those pixels.
+                let mut has_mask = false;
                 // The reference capture device counts path clips and pop_clip,
                 // but has no clip_image_mask callback. A masked image therefore
                 // pops its captured clip without changing PDF graphics state.
                 for key in [b"SMask".as_slice(), b"Mask".as_slice()] {
-                    if let Ok(mask) = stream.dict.get(key) {
+                    if let Ok(mask) = dictionary.get(key) {
                         let (_, mask) = self.source.dereference(mask)?;
                         if matches!(mask, Object::Stream(_)) {
-                            self.capture_clips.pop();
+                            has_mask = true;
                             break;
                         }
                     }
+                }
+                self.record_image(state);
+                if has_mask {
+                    self.capture_clips.pop();
                 }
                 return Ok(());
             }
             b"Form" => {}
             _ => return Ok(()),
         }
+        // Form content produces vector paths and must have an actual stream.
+        let stream = object.as_stream()?.clone();
         if self.active_forms.len() >= MAX_FORM_DEPTH {
             return Err(invalid("Form nesting limit exceeded").into());
         }
@@ -1636,6 +1658,15 @@ fn set_color(state: &mut GraphicsState, fill: bool, values: &[Object]) -> Result
     } else {
         state.stroke_color = components;
         state.stroke_pattern = pattern;
+    }
+    Ok(())
+}
+
+fn validate_image_dimensions(dictionary: &lopdf::Dictionary) -> Result<(), Box<dyn Error>> {
+    for key in [b"Width".as_slice(), b"Height".as_slice()] {
+        if dictionary.get(key)?.as_i64()? <= 0 {
+            return Err(invalid("Image XObject dimensions must be positive integers").into());
+        }
     }
     Ok(())
 }
@@ -1951,6 +1982,47 @@ mod tests {
             text_paints: Vec::new(),
             next_text_run: 1,
         }
+    }
+
+    #[test]
+    fn image_dictionary_keeps_transformed_clipped_raster_coverage() {
+        use lopdf::dictionary;
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {"XObject" => dictionary! {
+            "Image" => dictionary! {"Subtype" => "Image", "Width" => 64, "Height" => 64},
+            "Form" => dictionary! {"Subtype" => "Form"},
+            "Unknown" => dictionary! {"Subtype" => "Other"},
+            "Zero" => dictionary! {"Subtype" => "Image", "Width" => 0, "Height" => 64},
+            "Missing" => dictionary! {"Subtype" => "Image", "Width" => 64},
+        }};
+        let mut reader = pattern_fill_reader(&source);
+        let mut state = GraphicsState::default();
+        state.ctm = Matrix::from_objects(&[
+            20.into(),
+            0.into(),
+            0.into(),
+            30.into(),
+            10.into(),
+            15.into(),
+        ])
+        .unwrap();
+        state.image_clip = Some([15.0, 20.0, 25.0, 35.0]);
+        reader
+            .process_xobject(&[&resources], &state, "Image")
+            .unwrap();
+        assert_eq!(reader.image_ops, 1);
+        assert_eq!(reader.image_bounds, vec![[15.0, 20.0, 25.0, 35.0]]);
+        assert!(reader.capture.paths.is_empty());
+        for key in ["Form", "Unknown", "Zero", "Missing"] {
+            assert!(
+                reader.process_xobject(&[&resources], &state, key).is_err(),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            reader.image_ops, 1,
+            "rejected objects must not claim coverage"
+        );
     }
 
     #[test]

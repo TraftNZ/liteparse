@@ -2275,6 +2275,56 @@ mod tests {
     }
 
     #[test]
+    fn repeated_nested_forms_keep_polyline_owners_after_page_rotation() {
+        use lopdf::{Stream, dictionary};
+        let source = SourceDocument::with_version("1.7");
+        let leaf = Stream::new(
+            dictionary! {
+                "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 20.into(), 20.into()],
+                "Matrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 2.into(), 3.into()],
+            },
+            b"0 0 m 10 0 l S".to_vec(),
+        );
+        let outer = Stream::new(
+            dictionary! {
+                "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 40.into(), 40.into()],
+                "Resources" => dictionary! {"XObject" => dictionary! {"Leaf" => leaf}},
+            },
+            b"/Leaf Do".to_vec(),
+        );
+        let resources = dictionary! {"XObject" => dictionary! {"Outer" => outer}};
+        let mut reader = pattern_fill_reader(&source);
+        let mut state = GraphicsState::default();
+        state.ctm = Matrix([0.0, 1.0, -1.0, 0.0, 100.0, 0.0]);
+        reader
+            .process(
+                b"/Outer Do q 1 0 0 1 20 0 cm /Outer Do Q",
+                &[&resources],
+                state,
+            )
+            .unwrap();
+        assert_eq!(reader.capture.paths.len(), 2);
+        assert_eq!(reader.capture.polylines.len(), 2);
+        for (index, polyline) in reader.capture.polylines.iter().enumerate() {
+            assert_eq!(polyline.owner_path, index + 1);
+            let path = &reader.capture.paths[polyline.owner_path - 1];
+            assert_eq!(polyline.points[0], [path.ops[0].x, path.ops[0].y]);
+            assert_eq!(
+                reader.capture.segments[index].owner_path,
+                polyline.owner_path
+            );
+            assert!(std::sync::Arc::ptr_eq(
+                &reader.capture.segments[index].style,
+                &path.style
+            ));
+        }
+        assert_ne!(
+            reader.capture.polylines[0].points,
+            reader.capture.polylines[1].points
+        );
+    }
+
+    #[test]
     fn rotated_translations_preserve_reference_path_coordinates() {
         let viewport = Matrix([0.0, -1.0, -1.0, 0.0, 1684.0, 1191.0]);
         for (translation, point, expected) in [

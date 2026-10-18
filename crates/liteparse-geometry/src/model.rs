@@ -69,6 +69,7 @@ pub struct Segment {
     pub y1: f64,
     pub x2: f64,
     pub y2: f64,
+    /// One-based index into the full page path array; zero means no source path.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub owner_path: usize,
     #[serde(flatten)]
@@ -76,7 +77,11 @@ pub struct Segment {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Polyline {
+    /// One-based index into the full page path array; zero means no source path.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub owner_path: usize,
     pub points: Vec<[f64; 2]>,
     pub closed: bool,
 }
@@ -253,11 +258,36 @@ pub struct ViewportScale {
 }
 
 /// Extractor generation for PDFium geometry and its derived raster traces.
-pub const EXTRACTOR_VERSION: u32 = 14;
+pub const EXTRACTOR_VERSION: u32 = 15;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn polyline_ownership_round_trips_and_absence_stays_unowned() {
+        let polyline = Polyline {
+            owner_path: 3,
+            points: vec![[1.0, 2.0], [3.0, 4.0]],
+            closed: false,
+        };
+        let wire = serde_json::to_value(&polyline).unwrap();
+        assert_eq!(wire["ownerPath"], 3);
+        let decoded: Polyline = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded.owner_path, 3);
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let absent: Polyline = serde_json::from_value(serde_json::json!({
+            "points": [[1.0, 2.0], [3.0, 4.0]], "closed": false
+        }))
+        .unwrap();
+        assert_eq!(absent.owner_path, 0);
+        assert!(
+            serde_json::to_value(absent)
+                .unwrap()
+                .get("ownerPath")
+                .is_none()
+        );
+    }
 
     #[test]
     fn wire_keys_preserve_geometry_provenance() {

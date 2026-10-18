@@ -3,6 +3,23 @@ use std::path::PathBuf;
 use liteparse_geometry::content_paths::capture_page_content;
 use lopdf::{Document, Object};
 
+fn assert_path_ownership(capture: &liteparse_geometry::path_capture::PathCapture) {
+    assert_eq!(capture.polylines.len(), capture.paths.len());
+    for (index, polyline) in capture.polylines.iter().enumerate() {
+        assert_eq!(polyline.owner_path, index + 1);
+        let path = &capture.paths[polyline.owner_path - 1];
+        assert_eq!(polyline.closed, path.closed);
+        assert_eq!(polyline.points[0], [path.ops[0].x, path.ops[0].y]);
+    }
+    for segment in &capture.segments {
+        assert!(segment.owner_path > 0);
+        assert!(std::sync::Arc::ptr_eq(
+            &segment.style,
+            &capture.paths[segment.owner_path - 1].style
+        ));
+    }
+}
+
 #[test]
 fn original_alice_structural_pages_keep_native_paths_and_raster_coverage() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
@@ -30,6 +47,7 @@ fn original_alice_structural_pages_keep_native_paths_and_raster_coverage() {
     for number in 1..=7 {
         let page = capture_page_content(&source, number)
             .unwrap_or_else(|error| panic!("page {number}: {error}"));
+        assert_path_ownership(&page.paths);
         assert_eq!(
             page.paths.paths.len(),
             expected_paths[number as usize - 1],
@@ -66,6 +84,7 @@ fn original_alice_architectural_pages_keep_native_paths() {
             !page.paths.paths.is_empty(),
             "architectural page {number} lost native paths"
         );
+        assert_path_ownership(&page.paths);
         assert!(page.width_pts > 0.0 && page.height_pts > 0.0);
     }
 }

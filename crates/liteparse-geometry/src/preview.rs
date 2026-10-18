@@ -29,12 +29,17 @@ pub struct IndexedSegment {
     pub x2: f64,
     pub y2: f64,
     pub length_pts: f64,
+    #[serde(skip_serializing_if = "zero_count")]
+    pub owner_path: usize,
     #[serde(flatten)]
     pub style: PaintStyle,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexedPolyline {
+    #[serde(skip_serializing_if = "zero_count")]
+    pub owner_path: usize,
     pub index: usize,
     pub points: Vec<[f64; 2]>,
     pub closed: bool,
@@ -141,10 +146,7 @@ pub fn filter_page(page: &PageGeometry, options: &PreviewOptions) -> PagePreview
     let filtered_segments = scored_segments
         .into_iter()
         .map(|(index, length, segment)| {
-            // The established preview schema carries style but omits layer and
-            // ownerPath. Both remain available in the uncapped full artifact.
-            let mut style = (*segment.style).clone();
-            style.layer.clear();
+            let style = (*segment.style).clone();
             IndexedSegment {
                 index,
                 x1: segment.x1,
@@ -152,6 +154,7 @@ pub fn filter_page(page: &PageGeometry, options: &PreviewOptions) -> PagePreview
                 x2: segment.x2,
                 y2: segment.y2,
                 length_pts: length,
+                owner_path: segment.owner_path,
                 style,
             }
         })
@@ -179,6 +182,7 @@ pub fn filter_page(page: &PageGeometry, options: &PreviewOptions) -> PagePreview
         .into_iter()
         .map(|(index, _, polyline)| IndexedPolyline {
             index,
+            owner_path: polyline.owner_path,
             points: polyline.points.clone(),
             closed: polyline.closed,
         })
@@ -334,10 +338,12 @@ mod tests {
         ]);
         page.polylines = Some(vec![
             Polyline {
+                owner_path: 1,
                 points: vec![[0.0, 50.0], [100.0, 50.0]],
                 closed: false,
             },
             Polyline {
+                owner_path: 2,
                 points: vec![[50.0, 50.0], [60.0, 50.0]],
                 closed: true,
             },
@@ -352,9 +358,14 @@ mod tests {
         );
         assert_eq!(preview.segments.len(), 1);
         assert_eq!(preview.segments[0].index, 0);
-        assert!(preview.segments[0].style.layer.is_empty());
+        assert_eq!(preview.segments[0].style.layer, "Layer One");
+        assert_eq!(preview.segments[0].owner_path, 1);
         assert_eq!(page.segments.as_ref().unwrap()[0].style.layer, "Layer One");
         assert_eq!(preview.polylines.len(), 1);
         assert_eq!(preview.polylines[0].index, 1);
+        assert_eq!(preview.polylines[0].owner_path, 2);
+        let wire = serde_json::to_value(preview).unwrap();
+        assert_eq!(wire["segments"][0]["ownerPath"], 1);
+        assert_eq!(wire["polylines"][0]["ownerPath"], 2);
     }
 }

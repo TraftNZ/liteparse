@@ -210,6 +210,7 @@ impl PathCapture {
             style: style.clone(),
         });
         self.polylines.push(Polyline {
+            owner_path: self.paths.len(),
             points: vec![point],
             closed: false,
         });
@@ -433,6 +434,7 @@ mod tests {
             capture.polylines[0].points.len(),
             capture.segments.len() + 1
         );
+        assert_eq!(capture.polylines[0].owner_path, 1);
         assert_eq!(capture.segments.last().unwrap().x2, 10.0);
         assert!(
             capture
@@ -512,6 +514,41 @@ mod tests {
     }
 
     #[test]
+    fn transformed_fill_subpaths_keep_source_style_and_one_based_owners() {
+        let commands = vec![
+            command(SegmentKind::MoveTo, 0.0, 0.0, false),
+            command(SegmentKind::LineTo, 10.0, 0.0, false),
+            command(SegmentKind::LineTo, 10.0, 10.0, true),
+            command(SegmentKind::MoveTo, 20.0, 20.0, false),
+            command(SegmentKind::LineTo, 30.0, 20.0, false),
+            command(SegmentKind::LineTo, 30.0, 30.0, true),
+        ];
+        let style = PaintStyle {
+            paint: "fill".into(),
+            layer: "Walls".into(),
+            form_x_object_id: "nested-form".into(),
+            ..PaintStyle::default()
+        };
+        let mut capture = PathCapture::default();
+        capture
+            .paint_transformed_commands(&commands, Some(&style), None, |point| {
+                [100.0 - point[1], 200.0 + point[0]]
+            })
+            .unwrap();
+        assert_eq!(capture.paths.len(), 2);
+        for (index, polyline) in capture.polylines.iter().enumerate() {
+            assert_eq!(polyline.owner_path, index + 1);
+            let owner = &capture.paths[polyline.owner_path - 1];
+            assert_eq!(owner.style.layer, "Walls");
+            assert_eq!(owner.style.form_x_object_id, "nested-form");
+            assert_eq!(owner.style.paint, "fill");
+            assert_eq!(polyline.points[0], [owner.ops[0].x, owner.ops[0].y]);
+        }
+        assert_eq!(capture.polylines[0].points[0], [100.0, 200.0]);
+        assert_eq!(capture.polylines[1].points[0], [80.0, 220.0]);
+    }
+
+    #[test]
     fn dual_paint_closes_each_subpath_without_fabricating_raw_line() {
         let object = path(
             vec![
@@ -541,6 +578,8 @@ mod tests {
         assert!(capture.paths.iter().all(|path| path.closed));
         assert_eq!(capture.segments[0].owner_path, 1);
         assert_eq!(capture.segments[3].owner_path, 2);
+        assert_eq!(capture.polylines[0].owner_path, 1);
+        assert_eq!(capture.polylines[1].owner_path, 2);
     }
 
     #[test]
@@ -589,5 +628,6 @@ mod tests {
         assert_eq!(capture.segments[0].x1, 10.0);
         assert_eq!(capture.segments[0].x2, 80.0);
         assert_eq!(capture.polylines[0].points[1][0], 90.0);
+        assert_eq!(capture.polylines[0].owner_path, 1);
     }
 }

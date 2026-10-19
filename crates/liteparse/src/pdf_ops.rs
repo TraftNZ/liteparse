@@ -232,7 +232,11 @@ fn native_clip_pixels(
     Ok((x0, y0, x1, y1))
 }
 
-fn native_clip(page: &Page<'_, '_>, dpi: u32, rect: [f64; 4]) -> Result<RgbImage, Box<dyn Error>> {
+fn native_clip(
+    page: &Page<'_, '_>,
+    dpi: u32,
+    rect: [f64; 4],
+) -> Result<(RgbImage, [f64; 4]), Box<dyn Error>> {
     let (width_pt, height_pt) = page_size(page)?;
     let full_width = (width_pt * dpi as f64 / POINTS_PER_INCH - DIMENSION_EPSILON).ceil();
     let full_height = (height_pt * dpi as f64 / POINTS_PER_INCH - DIMENSION_EPSILON).ceil();
@@ -256,8 +260,20 @@ fn native_clip(page: &Page<'_, '_>, dpi: u32, rect: [f64; 4]) -> Result<RgbImage
         [-(x0 as f32), -(y0 as f32)],
         pdfium::pdfium_sys::FPDF_PRINTING as i32,
     )?;
-    RgbImage::from_raw(width as u32, height as u32, bitmap.to_rgb())
-        .ok_or_else(|| invalid("PDFium returned an invalid clipped raster").into())
+    let image = RgbImage::from_raw(width as u32, height as u32, bitmap.to_rgb())
+        .ok_or_else(|| invalid("PDFium returned an invalid clipped raster"))?;
+    // Publish the window actually rendered after integer pixel rounding. A
+    // caller cannot recover this offset from the requested fractional box.
+    let points_per_pixel = POINTS_PER_INCH / dpi as f64;
+    Ok((
+        image,
+        [
+            x0 as f64 * points_per_pixel,
+            y0 as f64 * points_per_pixel,
+            width as f64 * points_per_pixel,
+            height as f64 * points_per_pixel,
+        ],
+    ))
 }
 
 fn jpeg_page(
@@ -671,8 +687,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             } else {
                 safe_dpi(requested, width, height)?
             };
+            let mut actual_window = None;
             let image = if matches!(request.operation, PdfOperation::NativeClip) {
-                native_clip(&page, effective, rect)?
+                let (image, window) = native_clip(&page, effective, rect)?;
+                actual_window = Some(window);
+                image
             } else {
                 let full = full_render(&page, effective)?;
                 if matches!(request.operation, PdfOperation::RenderCrop) {
@@ -689,7 +708,19 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     full
                 }
             };
-            response.image = Some(jpeg_page(number, &image, effective)?);
+            let mut encoded = jpeg_page(number, &image, effective)?;
+            if let Some([x, y, width, height]) = actual_window {
+                let (page_width, page_height) = page_size(&page)?;
+                response.page_info = Some(PageInfo {
+                    width_pt: page_width as f32,
+                    height_pt: page_height as f32,
+                });
+                encoded.x = Some(x);
+                encoded.y = Some(y);
+                encoded.width = Some(width);
+                encoded.height = Some(height);
+            }
+            response.image = Some(encoded);
         }
         PdfOperation::ExtractImages => {
             let number = page_number(&request, total_pages)?;

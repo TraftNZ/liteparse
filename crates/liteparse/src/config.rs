@@ -37,6 +37,13 @@ pub struct LiteParseConfig {
     /// Shared edge between adjacent OCR tiles.
     #[serde(default)]
     pub oar_tile_overlap_px: Option<u32>,
+    /// HTTP OCR server for small rasters: a raster whose long edge is below
+    /// `ocr_small_image_max_long_edge_px` goes here, every other raster to the
+    /// main engine. Both fields are set together or not at all.
+    #[serde(default)]
+    pub ocr_small_image_server_url: Option<String>,
+    #[serde(default)]
+    pub ocr_small_image_max_long_edge_px: Option<u32>,
     /// Minimum accepted OCR confidence, in the closed interval [0, 1].
     #[serde(default)]
     pub ocr_min_confidence: f32,
@@ -328,6 +335,8 @@ impl Default for LiteParseConfig {
             oar_det_limit_side_len: None,
             oar_tile_px: None,
             oar_tile_overlap_px: None,
+            ocr_small_image_server_url: None,
+            ocr_small_image_max_long_edge_px: None,
             ocr_min_confidence: 0.0,
             ocr_pages: None,
             ocr_max_long_edge_px: default_ocr_max_long_edge_px(),

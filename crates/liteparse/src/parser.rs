@@ -429,7 +429,45 @@ impl LiteParse {
     /// The OCR engine a parse would use: the override when set, else the
     /// HTTP engine for `ocr_server_url`, else built-in Tesseract. `None` when
     /// OCR is disabled; an error when it is enabled but nothing can serve it.
+    /// With `ocr_small_image_server_url` set, rasters below
+    /// `ocr_small_image_max_long_edge_px` go to that server instead.
     pub fn ocr_engine(&self) -> Result<Option<std::sync::Arc<dyn OcrEngine>>, LiteParseError> {
+        let Some(main) = self.main_ocr_engine()? else {
+            return Ok(None);
+        };
+        match (
+            self.config.ocr_small_image_server_url.as_ref(),
+            self.config.ocr_small_image_max_long_edge_px,
+        ) {
+            (None, None) => Ok(Some(main)),
+            #[cfg(not(target_arch = "wasm32"))]
+            (Some(url), Some(max_long_edge_px)) => {
+                let small = std::sync::Arc::new(HttpOcrEngine::new(url.clone()).with_retry(
+                    crate::ocr::http_simple::OcrRetryConfig {
+                        hedge_delays_ms: self.config.ocr_hedge_delays_ms.clone(),
+                        ..Default::default()
+                    },
+                ));
+                Ok(Some(std::sync::Arc::new(
+                    crate::ocr::size_routed::SizeRoutedOcrEngine::new(
+                        small,
+                        main,
+                        max_long_edge_px,
+                    )?,
+                )))
+            }
+            #[cfg(target_arch = "wasm32")]
+            (Some(_), Some(_)) => {
+                Err("small-image OCR routing needs an HTTP OCR client, which WASM builds lack".into())
+            }
+            _ => Err(
+                "--ocr-small-image-server-url and --ocr-small-image-max-long-edge-px must be supplied together"
+                    .into(),
+            ),
+        }
+    }
+
+    fn main_ocr_engine(&self) -> Result<Option<std::sync::Arc<dyn OcrEngine>>, LiteParseError> {
         if !self.config.ocr_enabled {
             return Ok(None);
         }

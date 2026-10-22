@@ -41,6 +41,13 @@ FastAPI server wrapping Surya OCR 2.
 - Multilingual foundation model (90+ languages)
 - Block-level output; GPU recommended
 
+### [indraocr/](./indraocr/)
+FastAPI server wrapping Indra OCR (Datalab).
+- Port: **8831**
+- Very fast on small rasters; loses small lettering on large sheets
+- Meant for `--ocr-small-image-server-url` routing beside a tiling main engine
+- Weights licence restricts commercial use (see its README)
+
 ## Quick Start
 
 ```bash

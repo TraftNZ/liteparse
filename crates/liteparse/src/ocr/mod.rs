@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub mod http_simple;
 #[cfg(all(feature = "oar-ocr", not(target_arch = "wasm32")))]
 pub mod oar;
+pub mod size_routed;
 #[cfg(all(feature = "tesseract", not(target_arch = "wasm32")))]
 pub mod tesseract;
 

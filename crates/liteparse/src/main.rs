@@ -63,6 +63,12 @@ struct OcrBackendArgs {
     oar_tile_px: Option<u32>,
     #[arg(long)]
     oar_tile_overlap_px: Option<u32>,
+    /// HTTP OCR server for rasters whose long edge is below
+    /// --ocr-small-image-max-long-edge-px; larger rasters use --ocr-engine.
+    #[arg(long, requires = "ocr_small_image_max_long_edge_px")]
+    ocr_small_image_server_url: Option<String>,
+    #[arg(long, requires = "ocr_small_image_server_url")]
+    ocr_small_image_max_long_edge_px: Option<u32>,
     /// 1-based pages to OCR, using the same range syntax as --target-pages.
     #[arg(long)]
     ocr_pages: Option<String>,
@@ -523,6 +529,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 oar_det_limit_side_len: cmd.ocr_options.oar_det_limit_side_len,
                 oar_tile_px: cmd.ocr_options.oar_tile_px,
                 oar_tile_overlap_px: cmd.ocr_options.oar_tile_overlap_px,
+                ocr_small_image_server_url: cmd.ocr_options.ocr_small_image_server_url,
+                ocr_small_image_max_long_edge_px: cmd.ocr_options.ocr_small_image_max_long_edge_px,
                 ocr_pages: cmd.ocr_options.ocr_pages,
                 ocr_min_confidence: cmd.ocr_options.ocr_min_confidence,
                 ocr_max_long_edge_px: cmd.ocr_options.ocr_max_long_edge_px,
@@ -673,6 +681,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 oar_det_limit_side_len: cmd.ocr_options.oar_det_limit_side_len,
                 oar_tile_px: cmd.ocr_options.oar_tile_px,
                 oar_tile_overlap_px: cmd.ocr_options.oar_tile_overlap_px,
+                ocr_small_image_server_url: cmd.ocr_options.ocr_small_image_server_url,
+                ocr_small_image_max_long_edge_px: cmd.ocr_options.ocr_small_image_max_long_edge_px,
                 ocr_pages: cmd.ocr_options.ocr_pages,
                 ocr_min_confidence: cmd.ocr_options.ocr_min_confidence,
                 ocr_max_long_edge_px: cmd.ocr_options.ocr_max_long_edge_px,

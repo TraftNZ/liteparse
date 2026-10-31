@@ -9,6 +9,9 @@ use lopdf::{
 
 const INFLATE_BUFFER_BYTES: usize = 8192;
 const MAX_IMAGE_DECODE_BYTES: u64 = 512 * 1024 * 1024;
+/// How many bytes after an `EI` candidate must read as content text. Encoded
+/// image data can hold " EI " by chance; the operators after it are text.
+const EI_LOOKAHEAD_BYTES: usize = 10;
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
@@ -99,6 +102,36 @@ fn flate_length(bytes: &[u8]) -> Result<usize, Box<dyn Error>> {
     }
 }
 
+/// Finds the `EI` ending an image whose encoding states no length of its own,
+/// returning where the data ends and where the content resumes. ASCII filters
+/// may run straight into `EI` after their `>` end marker.
+fn encoded_image_end(bytes: &[u8], data_start: usize) -> Result<(usize, usize), io::Error> {
+    let candidates = bytes[data_start..]
+        .windows(2)
+        .enumerate()
+        .filter(|(_, pair)| *pair == b"EI")
+        .map(|(offset, _)| data_start + offset);
+    for start in candidates {
+        let end = start + 2;
+        let separated = start > data_start
+            && (whitespace(bytes[start - 1]) || bytes[start - 1] == b'>')
+            && bytes.get(end).is_none_or(|byte| whitespace(*byte));
+        let text_follows = bytes[end..]
+            .iter()
+            .take(EI_LOOKAHEAD_BYTES)
+            .all(|byte| whitespace(*byte) || (0x20..0x7f).contains(byte));
+        if separated && text_follows {
+            let data_end = if whitespace(bytes[start - 1]) {
+                start - 1
+            } else {
+                start
+            };
+            return Ok((data_end, end));
+        }
+    }
+    Err(invalid("inline image missing EI"))
+}
+
 pub(crate) fn decode(bytes: &[u8]) -> Result<Vec<Operation>, Box<dyn Error>> {
     let mut cursor = 0;
     let mut chunk_start = 0;
@@ -150,11 +183,6 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Vec<Operation>, Box<dyn Error>> {
                 .is_ok_and(|name| matches!(name, b"Fl" | b"FlateDecode")),
             _ => false,
         });
-        if !flate {
-            // Keep lopdf's existing decoding rules for other image encodings.
-            operations.extend(Content::decode(&bytes[chunk_start..])?.operations);
-            return Ok(operations);
-        }
         if !bytes.get(cursor).is_some_and(|byte| whitespace(*byte)) {
             return Err(invalid("inline image ID missing separator").into());
         }
@@ -163,15 +191,20 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Vec<Operation>, Box<dyn Error>> {
             cursor += 1;
         }
         let data_start = cursor;
-        cursor += flate_length(&bytes[data_start..])?;
-        let data_end = cursor;
-        if !bytes.get(cursor).is_some_and(|byte| whitespace(*byte)) {
-            return Err(invalid("inline image data missing EI separator").into());
-        }
-        let terminator =
-            token(bytes, &mut cursor)?.ok_or_else(|| invalid("inline image missing EI"))?;
-        if &bytes[terminator.0..terminator.1] != b"EI" {
-            return Err(invalid("inline image stream not followed by EI").into());
+        let data_end;
+        if flate {
+            cursor += flate_length(&bytes[data_start..])?;
+            data_end = cursor;
+            if !bytes.get(cursor).is_some_and(|byte| whitespace(*byte)) {
+                return Err(invalid("inline image data missing EI separator").into());
+            }
+            let terminator =
+                token(bytes, &mut cursor)?.ok_or_else(|| invalid("inline image missing EI"))?;
+            if &bytes[terminator.0..terminator.1] != b"EI" {
+                return Err(invalid("inline image stream not followed by EI").into());
+            }
+        } else {
+            (data_end, cursor) = encoded_image_end(bytes, data_start)?;
         }
         operations.extend(Content::decode(&bytes[chunk_start..start])?.operations);
         operations.push(Operation::new(
@@ -192,6 +225,37 @@ mod tests {
     use super::*;
     use flate2::{Compression, write::ZlibEncoder};
     use std::io::Write;
+
+    #[test]
+    fn fax_image_data_does_not_end_the_page() {
+        let pixels = b"&\xc9\xff\x00 EI \xfe\x08\xff\xfe";
+        let mut bytes = b"q BI /IM true/W 9/H 2/BPC 1/F/CCF/DP<</K -1/Columns 9>>\rID\r".to_vec();
+        bytes.extend_from_slice(pixels);
+        bytes.extend_from_slice(b"\nEI\rQ q 1 2 m 3 4 l S Q");
+        let operations = decode(&bytes).unwrap();
+        assert_eq!(
+            operations
+                .iter()
+                .map(|op| op.operator.as_str())
+                .collect::<Vec<_>>(),
+            ["q", "BI", "Q", "q", "m", "l", "S", "Q"]
+        );
+        let image = operations[1].operands[0].as_stream().unwrap();
+        assert_eq!(image.content, pixels);
+    }
+
+    #[test]
+    fn ascii_image_may_run_into_ei() {
+        let operations = decode(b"BI /W 1/H 1/BPC 8/F/AHx ID 00>EI Q").unwrap();
+        let image = operations[0].operands[0].as_stream().unwrap();
+        assert_eq!(image.content, b"00>");
+        assert_eq!(operations[1].operator, "Q");
+    }
+
+    #[test]
+    fn image_with_no_end_is_refused() {
+        assert!(decode(b"BI /W 1/H 1/BPC 8/F/AHx ID 00> Q").is_err());
+    }
 
     #[test]
     fn compressed_image_preserves_payload_and_following_operations() {

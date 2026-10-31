@@ -504,9 +504,10 @@ impl CurrentPath {
         if self.commands.last().is_some_and(|command| command.close) {
             return Ok(());
         }
-        let first = self
-            .first
-            .ok_or_else(|| invalid("closepath without moveto"))?;
+        // With no subpath open there is nothing to close: a viewer draws nothing.
+        let Some(first) = self.first else {
+            return Ok(());
+        };
         self.command(SegmentKind::LineTo, first, true, state)?;
         self.current = Some(first);
         Ok(())
@@ -564,6 +565,7 @@ struct StreamReader<'a> {
     image_ops: usize,
     image_bounds: Vec<[f64; 4]>,
     text_line_corrections: Vec<[f64; 2]>,
+    missing_xobjects: Vec<String>,
     text_paints: Vec<SourceTextPaint>,
     next_text_run: usize,
 }
@@ -1340,7 +1342,10 @@ impl<'a> StreamReader<'a> {
         key: &str,
     ) -> Result<(), Box<dyn Error>> {
         let Some((id, object)) = self.resource(resources, b"XObject", key.as_bytes())? else {
-            return Err(invalid(format!("missing XObject {key}")).into());
+            // A viewer draws nothing for a name the page never defined. What
+            // the producer meant to draw there is unknown, so the page says so.
+            self.missing_xobjects.push(key.to_owned());
+            return Ok(());
         };
         let dictionary = match object {
             Object::Stream(stream) => &stream.dict,
@@ -1775,6 +1780,7 @@ fn read_page_content(
         image_ops: 0,
         image_bounds: Vec::new(),
         text_line_corrections: Vec::new(),
+        missing_xobjects: Vec::new(),
         text_paints: Vec::new(),
         next_text_run: 1,
     };
@@ -1809,6 +1815,12 @@ fn read_page_content(
             .errors
             .push("unclosed marked-content groups".into());
     }
+    observations.errors.extend(
+        reader
+            .missing_xobjects
+            .iter()
+            .map(|key| format!("missing XObject {key}")),
+    );
     observations.marked_groups = reader.marked_groups;
     Ok(SourcePageContent {
         observations,
@@ -1928,6 +1940,7 @@ mod tests {
             image_ops: 0,
             image_bounds: Vec::new(),
             text_line_corrections: Vec::new(),
+            missing_xobjects: Vec::new(),
             text_paints: Vec::new(),
             next_text_run: 1,
         };
@@ -1979,6 +1992,7 @@ mod tests {
             image_ops: 0,
             image_bounds: Vec::new(),
             text_line_corrections: Vec::new(),
+            missing_xobjects: Vec::new(),
             text_paints: Vec::new(),
             next_text_run: 1,
         }
@@ -2364,6 +2378,7 @@ mod tests {
             image_ops: 0,
             image_bounds: Vec::new(),
             text_line_corrections: Vec::new(),
+            missing_xobjects: Vec::new(),
             text_paints: Vec::new(),
             next_text_run: 1,
         };
@@ -2383,5 +2398,27 @@ mod tests {
         assert_eq!((element.path_begin, element.path_end), (0, 1));
         assert_eq!(reader.capture.paths[0].style.marked_group, element.index);
         assert_eq!(reader.capture.segments[0].style.marked_group, element.index);
+    }
+
+    #[test]
+    fn stray_closepath_draws_nothing_and_later_paths_survive() {
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(b"h S 0 0 m 10 0 l S", &[], GraphicsState::default())
+            .unwrap();
+        assert_eq!(reader.capture.paths.len(), 1);
+    }
+
+    #[test]
+    fn missing_xobject_draws_nothing_and_is_recorded() {
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(b"/Im5 Do 0 0 m 10 0 l S", &[], GraphicsState::default())
+            .unwrap();
+        assert_eq!(reader.capture.paths.len(), 1);
+        assert_eq!(reader.image_ops, 0);
+        assert_eq!(reader.missing_xobjects, ["Im5"]);
     }
 }

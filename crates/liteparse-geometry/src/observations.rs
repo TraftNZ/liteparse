@@ -6,6 +6,7 @@
 
 use lopdf::{Dictionary, Document, Object, ObjectId, decode_text_string};
 use serde::{Deserialize, Serialize};
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 
 const MAX_ANNOTATIONS: usize = 10_000;
@@ -49,7 +50,27 @@ pub struct AnnotationObservation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bbox: Option<[f64; 4]>,
     pub has_measure: bool,
+    /// Where a link annotation (a view marker, a sheet reference) points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkTarget>,
 }
+
+/// The destination of a link annotation, as the file states it. A destination
+/// that names a page of this document resolves to its 1-based page number; a
+/// named destination is kept by name, since resolving it needs the document's
+/// name tree.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkTarget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_page: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+}
+
+type PageNumbers = OnceCell<BTreeMap<ObjectId, u32>>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -214,11 +235,61 @@ fn bounds(
     ]))
 }
 
+/// ISO 32000-1 12.5.6.5 and 12.3.2: a link names its target by a URI action, a
+/// GoTo action's destination, or a destination of its own. A destination array
+/// opens with the page object it shows.
+fn link_target(
+    doc: &Document,
+    dict: &Dictionary,
+    pages: &PageNumbers,
+) -> Result<Option<LinkTarget>, String> {
+    let mut target = LinkTarget::default();
+    let mut destination = dict.get(b"Dest").ok();
+    if let Ok(action) = dict.get(b"A") {
+        let action = resolve(doc, action)?.as_dict().map_err(|e| e.to_string())?;
+        let kind = action
+            .get(b"S")
+            .ok()
+            .and_then(|v| resolve(doc, v).ok())
+            .and_then(|v| v.as_name().ok())
+            .unwrap_or_default();
+        match kind {
+            b"URI" => target.uri = text(doc, action, b"URI")?,
+            b"GoTo" => destination = action.get(b"D").ok(),
+            _ => {}
+        }
+    }
+    if let Some(destination) = destination {
+        match resolve(doc, destination)? {
+            Object::Array(items) => {
+                if let Some(page) = items.first().and_then(|v| v.as_reference().ok()) {
+                    let numbers = pages.get_or_init(|| {
+                        doc.get_pages().into_iter().map(|(n, id)| (id, n)).collect()
+                    });
+                    target.target_page = numbers.get(&page).copied();
+                }
+            }
+            Object::Name(name) => {
+                target.destination = Some(String::from_utf8_lossy(name).into_owned());
+            }
+            value @ Object::String(..) => {
+                target.destination = Some(decode_text_string(value).map_err(|e| e.to_string())?);
+            }
+            _ => {}
+        }
+    }
+    Ok(
+        (target.target_page.is_some() || target.uri.is_some() || target.destination.is_some())
+            .then_some(target),
+    )
+}
+
 fn annotation(
     doc: &Document,
     entry: &Object,
     index: usize,
     transform: &impl Fn(f64, f64) -> (f64, f64),
+    pages: &PageNumbers,
 ) -> Result<AnnotationObservation, String> {
     let object_ref = entry
         .as_reference()
@@ -236,6 +307,11 @@ fn annotation(
         && subject
             .as_deref()
             .is_some_and(|s| s.trim().eq_ignore_ascii_case("AutoCAD SHX Text"));
+    let link = if subtype == "Link" {
+        link_target(doc, dict, pages)?
+    } else {
+        None
+    };
     Ok(AnnotationObservation {
         index,
         object_ref,
@@ -246,6 +322,7 @@ fn annotation(
         contents: text(doc, dict, b"Contents")?.unwrap_or_default(),
         bbox: bounds(doc, dict, transform)?,
         has_measure: dict.has(b"Measure"),
+        link,
     })
 }
 
@@ -311,8 +388,9 @@ pub fn read_page_observations(
                     .errors
                     .push("annotation count exceeds extraction limit".into());
             }
+            let pages = PageNumbers::new();
             for (index, entry) in entries.iter().take(MAX_ANNOTATIONS).enumerate() {
-                match annotation(doc, entry, index, &transform) {
+                match annotation(doc, entry, index, &transform, &pages) {
                     Ok(value) => output.annotations.push(value),
                     Err(error) => {
                         output.annotations_checked = false;
@@ -357,5 +435,36 @@ mod tests {
         assert_eq!(observed.annotations[1].provenance, "pdf-annotation");
         assert!(observed.annotations[1].has_measure);
         assert_eq!(observed.errors.len(), 1);
+    }
+    #[test]
+    fn link_annotations_state_the_page_uri_or_name_they_point_to() {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let target = doc.add_object(dictionary! {"Type"=>"Page","Parent"=>pages_id});
+        let other = doc.add_object(dictionary! {"Type"=>"Page","Parent"=>pages_id});
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type"=>"Pages","Count"=>2,
+                "Kids"=>vec![Object::Reference(target),Object::Reference(other)]
+            }),
+        );
+        let catalog = doc.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages_id});
+        doc.trailer.set("Root", catalog);
+        let rect = || vec![0.into(), 0.into(), 10.into(), 10.into()];
+        let goto = doc.add_object(dictionary! {"Subtype"=>"Link","Rect"=>rect(),
+            "A"=>dictionary!{"S"=>"GoTo","D"=>vec![Object::Reference(other),"Fit".into()]}});
+        let uri = doc.add_object(dictionary! {"Subtype"=>"Link","Rect"=>rect(),
+            "A"=>dictionary!{"S"=>"URI","URI"=>Object::string_literal("https://example.test/s")}});
+        let named = doc.add_object(dictionary! {"Subtype"=>"Link","Rect"=>rect(),"Dest"=>Object::string_literal("A-101")});
+        let bare = doc.add_object(dictionary! {"Subtype"=>"Link","Rect"=>rect()});
+        let page = doc.add_object(dictionary! {"Annots"=>vec![
+            Object::Reference(goto),Object::Reference(uri),Object::Reference(named),Object::Reference(bare)]});
+        let observed = read_page_observations(&doc, page, |x, y| (x, y));
+        let link = |i: usize| observed.annotations[i].link.clone();
+        assert_eq!(link(0).and_then(|l| l.target_page), Some(2));
+        assert_eq!(link(1).and_then(|l| l.uri).as_deref(), Some("https://example.test/s"));
+        assert_eq!(link(2).and_then(|l| l.destination).as_deref(), Some("A-101"));
+        assert!(link(3).is_none());
     }
 }

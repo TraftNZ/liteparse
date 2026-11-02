@@ -436,7 +436,7 @@ pub fn inspect_page(path: &Path, page_number: u32) -> Result<PageProbe, Box<dyn 
     let mut streams = Vec::new();
     collect_stream(
         "page".into(),
-        &source.get_page_content(page_id)?,
+        &content_paths::page_content_bytes(&source, page_id)?,
         &mut streams,
     )?;
     let mut resources = Vec::new();

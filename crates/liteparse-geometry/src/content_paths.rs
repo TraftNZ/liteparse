@@ -872,6 +872,9 @@ impl<'a> StreamReader<'a> {
         let default_ctm = state.ctm;
         let initial_clip_depth = state.clip_depth;
         let operations = crate::inline_images::decode(bytes)?;
+        // Marked content is scoped to one content stream: the stream may not
+        // end, or stray-close, a sequence its caller opened.
+        let marked_base = self.layers.len();
         let mut saved = Vec::new();
         let mut path = CurrentPath::default();
         for operation in operations {
@@ -1133,29 +1136,45 @@ impl<'a> StreamReader<'a> {
                     self.layers
                         .push(self.resolve_layer(resources, operands)?.unwrap_or_default());
                 }
-                "EMC" => {
-                    self.layers
-                        .pop()
-                        .ok_or_else(|| invalid("unbalanced marked content end"))?;
-                    self.marked_content.pop();
-                    if let Some(index) = self.marked_group_stack.pop() {
-                        let group = &mut self.marked_groups[index - 1];
-                        group.path_end = self.capture.paths.len();
-                        group.text_end = self.text_paints.len();
-                    }
-                }
+                // Viewers ignore an end with no open sequence in this stream,
+                // as `Q` does for an extra restore; real producers emit them.
+                "EMC" => self.close_marked_content(marked_base),
                 "BI" => self.record_image(&state),
                 "Do" => self.process_xobject(resources, &state, &name(operand(operands, 0)?)?)?,
                 _ => {}
             }
         }
-        if !saved.is_empty() {
-            return Err(invalid("unbalanced graphics state save").into());
-        }
+        // A stream that ends with `q` states still open is restored
+        // implicitly by viewers. `state` is owned by this call, so nothing
+        // leaks to the caller; only clips still on the capture stack need
+        // popping, which the loop below does from the current clip depth.
         for _ in initial_clip_depth..state.clip_depth {
             self.capture_clips.pop();
         }
         Ok(())
+    }
+
+    /// Closes the innermost marked-content sequence above `base` layers, or
+    /// does nothing when this stream has none open.
+    fn close_marked_content(&mut self, base: usize) {
+        if self.layers.len() <= base {
+            return;
+        }
+        self.layers.pop();
+        self.marked_content.pop();
+        if let Some(index) = self.marked_group_stack.pop() {
+            let group = &mut self.marked_groups[index - 1];
+            group.path_end = self.capture.paths.len();
+            group.text_end = self.text_paints.len();
+        }
+    }
+
+    /// Closes every sequence a nested stream left open, so it cannot capture
+    /// the content that follows in its parent.
+    fn close_marked_content_to(&mut self, base: usize) {
+        while self.layers.len() > base {
+            self.close_marked_content(base);
+        }
     }
 
     fn resource<'b>(
@@ -1431,7 +1450,9 @@ impl<'a> StreamReader<'a> {
             stream.content.clone()
         };
         let added_clips = nested.clip_depth - state.clip_depth;
+        let marked_base = self.layers.len();
         let result = self.process(&bytes, &nested_resources, nested);
+        self.close_marked_content_to(marked_base);
         for _ in 0..added_clips {
             self.capture_clips.pop();
         }
@@ -1516,7 +1537,9 @@ impl<'a> StreamReader<'a> {
             tile.image_clip.unwrap_or(self.page_bounds),
             self.page_bounds,
         );
+        let marked_base = self.layers.len();
         let result = self.process(&bytes, &nested_resources, tile);
+        self.close_marked_content_to(marked_base);
         if self.image_ops > image_ops_before {
             self.record_image_bounds(pattern_bounds);
         }
@@ -1667,6 +1690,30 @@ fn set_color(state: &mut GraphicsState, fill: bool, values: &[Object]) -> Result
     Ok(())
 }
 
+/// A page's `/Contents` streams as one byte string. The PDF specification
+/// treats the streams as separated by whitespace, so a token cannot continue
+/// across a boundary; `Document::get_page_content` concatenates them with no
+/// separator, which fuses `Q` and `Q` into the unknown operator `QQ`.
+pub(crate) fn page_content_bytes(
+    source: &SourceDocument,
+    page_id: lopdf::ObjectId,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut content = Vec::new();
+    for object_id in source.get_page_contents(page_id) {
+        let Ok(stream) = source.get_object(object_id).and_then(Object::as_stream) else {
+            continue;
+        };
+        if !content.is_empty() {
+            content.push(b'\n');
+        }
+        match stream.decompressed_content() {
+            Ok(data) => content.extend_from_slice(&data),
+            Err(_) => content.extend_from_slice(&stream.content),
+        }
+    }
+    Ok(content)
+}
+
 fn validate_image_dimensions(dictionary: &lopdf::Dictionary) -> Result<(), Box<dyn Error>> {
     for key in [b"Width".as_slice(), b"Height".as_slice()] {
         if dictionary.get(key)?.as_i64()? <= 0 {
@@ -1785,7 +1832,7 @@ fn read_page_content(
         next_text_run: 1,
     };
     reader.process(
-        &source.get_page_content(page_id)?,
+        &page_content_bytes(source, page_id)?,
         &resources,
         GraphicsState {
             ctm: Matrix::from_viewport(viewport),
@@ -2420,5 +2467,93 @@ mod tests {
         assert_eq!(reader.capture.paths.len(), 1);
         assert_eq!(reader.image_ops, 0);
         assert_eq!(reader.missing_xobjects, ["Im5"]);
+    }
+
+    #[test]
+    fn contents_streams_are_separated_by_whitespace() {
+        use lopdf::{Stream, dictionary};
+        let mut source = SourceDocument::with_version("1.7");
+        let first = source.add_object(Stream::new(dictionary! {}, b"q 0 0 10 10 re f Q".to_vec()));
+        let second = source.add_object(Stream::new(dictionary! {}, b"Q\r\n\r\n".to_vec()));
+        let page = source.add_object(dictionary! {
+            "Type" => "Page", "Contents" => vec![first.into(), second.into()],
+        });
+        let content = page_content_bytes(&source, page).unwrap();
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(&content, &[], GraphicsState::default())
+            .expect("a restore ending one stream must not fuse with the next");
+        assert_eq!(reader.capture.paths.len(), 1);
+    }
+
+    #[test]
+    fn stray_marked_content_end_is_ignored() {
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(
+                b"EMC /Span BMC 0 0 10 10 re f EMC EMC 20 0 10 10 re f",
+                &[],
+                GraphicsState::default(),
+            )
+            .expect("an extra EMC is ignored by viewers");
+        assert_eq!(reader.capture.paths.len(), 2);
+        assert!(reader.layers.is_empty() && reader.marked_group_stack.is_empty());
+        assert!(reader.marked_content.is_empty());
+        assert_eq!(reader.marked_groups.len(), 1);
+        assert_eq!(reader.marked_groups[0].path_end, 1);
+    }
+
+    #[test]
+    fn unclosed_graphics_state_save_is_restored_at_stream_end() {
+        let source = SourceDocument::with_version("1.7");
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(
+                b"q q 0 0 50 50 re W n 0 0 10 10 re f",
+                &[],
+                GraphicsState::default(),
+            )
+            .expect("viewers restore unclosed saves implicitly");
+        assert_eq!(reader.capture.paths.len(), 1);
+        assert!(
+            reader.capture_clips.is_empty(),
+            "clips must not outlive the stream"
+        );
+    }
+
+    #[test]
+    fn nested_stream_cannot_leak_state_or_marked_content_to_its_parent() {
+        use lopdf::{Stream, dictionary};
+        let source = SourceDocument::with_version("1.7");
+        let resources = dictionary! {
+            "XObject" => dictionary! {
+                "F" => Stream::new(
+                    dictionary! {"Subtype" => "Form"},
+                    b"EMC q 0 0 5 5 re W n /Leak BMC 1 0 0 1 0 0 cm 0 0 10 10 re f".to_vec(),
+                )
+            }
+        };
+        let mut reader = pattern_fill_reader(&source);
+        reader
+            .process(
+                b"/Outer BMC /F Do 20 0 10 10 re f EMC",
+                &[&resources],
+                GraphicsState::default(),
+            )
+            .unwrap();
+        assert_eq!(reader.capture.paths.len(), 2);
+        assert!(reader.layers.is_empty() && reader.marked_group_stack.is_empty());
+        assert!(reader.capture_clips.is_empty());
+        let outer = &reader.marked_groups[0];
+        assert_eq!(outer.tag, "Outer");
+        assert_eq!(
+            outer.path_end, 2,
+            "the form's stray EMC must not close the parent's group"
+        );
+        let leak = &reader.marked_groups[1];
+        assert_eq!(leak.tag, "Leak");
+        assert_eq!(leak.path_end, 1, "a form's open group ends with the form");
+        assert_eq!(reader.capture.paths[1].style.marked_group, outer.index);
     }
 }

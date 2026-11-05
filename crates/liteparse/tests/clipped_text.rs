@@ -7,7 +7,7 @@ fn pdf(content: &str, forms: &[&str], rotation: i32) -> Vec<u8> {
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
         format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Rotate {rotation} /Resources << /Font << /F1 4 0 R >> /XObject << /Outer 6 0 R >> >> /Contents 5 0 R >>"
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Rotate {rotation} /Resources << /Font << /F1 4 0 R >> /XObject << /Outer 6 0 R >> /ExtGState << /Clear << /ca 0 >> /Half << /ca 0.5 >> /Faint << /ca 0.02 >> >> >> /Contents 5 0 R >>"
         ),
         "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>".to_string(),
         stream("", content),
@@ -131,13 +131,47 @@ fn stacked_clips_intersect_and_restore_does_not_leak() {
 #[test]
 fn unsupported_clips_preserve_source_text() {
     for path in [
-        "0 0 m 1 0 l 1 1 l h",   // triangle, all text outside
-        "0 0 1 1 re 2 2 1 1 re", // compound even-odd path
-        "0 0 m 1 0 1 1 0 1 c h", // curve
+        "0 0 m 1 0 1 1 0 1 c h",             // curve
+        "0 0 m 1 0 l 1 1 l 5 5 1 1 1 1 c h", // curve among lines
     ] {
         let content = format!("q {path} W* n BT /F1 10 Tf 10 20 Td (KEEP) Tj ET Q");
         assert_text(&pdf(&content, &[], 0), "KEEP");
     }
+}
+
+#[test]
+fn text_outside_a_polygon_clip_is_hidden_and_text_inside_is_kept() {
+    // A triangle over the lower left; one string sits inside it, one far outside.
+    let content = "q 0 0 m 300 0 l 0 300 l h W* n BT /F1 10 Tf 20 20 Td (INSIDE) Tj ET BT /F1 10 Tf 400 400 Td (OUTSIDE) Tj ET Q";
+    assert_text(&pdf(content, &[], 0), "INSIDE");
+}
+
+#[test]
+fn text_in_the_notch_of_a_concave_polygon_clip_is_hidden() {
+    // An L: the square 100..200 square is the notch, outside the outline.
+    let content = "q 0 0 m 200 0 l 200 100 l 100 100 l 100 200 l 0 200 l h W n BT /F1 10 Tf 20 20 Td (ARM) Tj ET BT /F1 10 Tf 130 130 Td (NOTCH) Tj ET Q";
+    assert_text(&pdf(content, &[], 0), "ARM");
+}
+
+#[test]
+fn text_in_the_hole_of_a_compound_clip_is_hidden_when_both_fill_rules_agree() {
+    // The hole winds against the outline, so even-odd and non-zero both leave it empty.
+    let content = "q 0 0 m 300 0 l 300 300 l 0 300 l h 100 100 m 100 200 l 200 200 l 200 100 l h W* n BT /F1 10 Tf 20 20 Td (RING) Tj ET BT /F1 10 Tf 130 140 Td (HOLE) Tj ET Q";
+    assert_text(&pdf(content, &[], 0), "RING");
+}
+
+#[test]
+fn text_in_a_hole_the_fill_rules_disagree_on_is_kept() {
+    // Same winding: even-odd leaves the hole empty, non-zero fills it, and the
+    // file's rule is not reported, so the text stays.
+    let content = "q 0 0 m 300 0 l 300 300 l 0 300 l h 100 100 m 200 100 l 200 200 l 100 200 l h W* n BT /F1 10 Tf 130 140 Td (HOLE) Tj ET Q";
+    assert_text(&pdf(content, &[], 0), "HOLE");
+}
+
+#[test]
+fn a_rotated_square_clip_hides_text_beyond_its_corners() {
+    let content = "q 150 100 m 200 150 l 150 200 l 100 150 l h W n BT /F1 10 Tf 140 148 Td (MID) Tj ET BT /F1 10 Tf 95 95 Td (CORNER) Tj ET Q";
+    assert_text(&pdf(content, &[], 0), "MID");
 }
 
 #[test]
@@ -187,7 +221,7 @@ fn unsupported_parent_clip_preserves_form_text() {
         "BT /F1 10 Tf 10 20 Td (KEEP) Tj ET",
     );
     assert_text(
-        &pdf("0 0 m 1 0 l 1 1 l h W n /Outer Do", &[&form], 0),
+        &pdf("0 0 m 1 0 1 1 0 1 c h W n /Outer Do", &[&form], 0),
         "KEEP",
     );
 }
@@ -282,4 +316,63 @@ fn ink_just_outside_the_clip_is_kept_within_a_small_share_of_the_em() {
         right - left + 2.0
     );
     assert_text(&pdf(&content, &[], 0), "");
+}
+
+const GHOST_FORM_RESOURCES: &str = "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> /XObject << /Inner 7 0 R >> >>";
+
+fn ghost_text_form() -> String {
+    stream(GHOST_FORM_RESOURCES, "BT /F1 10 Tf 5 20 Td (GHOST) Tj ET")
+}
+
+#[test]
+fn text_in_a_form_drawn_at_zero_alpha_is_hidden() {
+    let content = "q /Clear gs /Outer Do Q BT /F1 10 Tf 100 100 Td (SHOWN) Tj ET";
+    assert_text(&pdf(content, &[&ghost_text_form()], 0), "SHOWN");
+}
+
+#[test]
+fn text_in_a_form_nested_below_a_zero_alpha_form_is_hidden() {
+    let inner = stream(
+        "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> >>",
+        "BT /F1 10 Tf 5 20 Td (DEEP) Tj ET",
+    );
+    let outer = stream(
+        "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /XObject << /Inner 7 0 R >> >>",
+        "/Inner Do",
+    );
+    let content = "q /Clear gs /Outer Do Q BT /F1 10 Tf 100 100 Td (SHOWN) Tj ET";
+    assert_text(&pdf(content, &[&outer, &inner], 0), "SHOWN");
+}
+
+#[test]
+fn text_in_a_translucent_form_is_kept() {
+    let content = "q /Half gs /Outer Do Q";
+    assert_text(&pdf(content, &[&ghost_text_form()], 0), "GHOST");
+}
+
+#[test]
+fn zero_alpha_form_under_an_unreadable_clip_still_hides_its_text() {
+    let content =
+        "q 0 0 m 1 0 1 1 0 1 c h W n /Clear gs /Outer Do Q BT /F1 10 Tf 100 100 Td (SHOWN) Tj ET";
+    assert_text(&pdf(content, &[&ghost_text_form()], 0), "SHOWN");
+}
+
+#[test]
+fn text_in_a_form_at_two_percent_alpha_is_hidden() {
+    let content = "q /Faint gs /Outer Do Q BT /F1 10 Tf 100 100 Td (SHOWN) Tj ET";
+    assert_text(&pdf(content, &[&ghost_text_form()], 0), "SHOWN");
+}
+
+#[test]
+fn nested_translucent_forms_hide_text_when_their_alphas_multiply_below_visible() {
+    let inner = stream(
+        "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /Font << /F1 4 0 R >> >>",
+        "BT /F1 10 Tf 5 20 Td (DEEP) Tj ET",
+    );
+    let outer = stream(
+        "/Type /XObject /Subtype /Form /BBox [0 0 300 300] /Resources << /XObject << /Inner 7 0 R >> /ExtGState << /Tenth << /ca 0.08 >> >> >>",
+        "q /Tenth gs /Inner Do Q",
+    );
+    let content = "q /Half gs /Outer Do Q BT /F1 10 Tf 100 100 Td (SHOWN) Tj ET";
+    assert_text(&pdf(content, &[&outer, &inner], 0), "SHOWN");
 }

@@ -5,6 +5,7 @@
 //! paths/transforms preserve text, including OCR text layers.
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use pdfium::{Matrix, Page, PageObject, PageObjectKind, RawPathSegment, RectF, SegmentKind};
 
@@ -25,7 +26,50 @@ const IDENTITY: Matrix = Matrix {
 #[derive(Clone)]
 struct ClipShape {
     rect: Option<RectF>,
-    polygons: Vec<Polygon>,
+    polygons: PolygonList,
+}
+
+/// Persistent list of polygons: cloning a shape for a child or for each text
+/// object shares the polygons instead of copying their vertices.
+#[derive(Clone, Default)]
+struct PolygonList {
+    head: Option<Rc<PolygonNode>>,
+    vertices: usize,
+    /// The vertex budget was exceeded; polygon clipping is off for this shape
+    /// and everything nested under it.
+    abandoned: bool,
+}
+
+struct PolygonNode {
+    polygon: Polygon,
+    next: Option<Rc<PolygonNode>>,
+}
+
+impl PolygonList {
+    fn push(&mut self, polygon: Polygon) {
+        if self.abandoned {
+            return;
+        }
+        let vertices = self.vertices + polygon.vertex_count();
+        if vertices > MAX_CLIP_VERTICES {
+            *self = Self {
+                head: None,
+                vertices: 0,
+                abandoned: true,
+            };
+            return;
+        }
+        self.vertices = vertices;
+        self.head = Some(Rc::new(PolygonNode {
+            polygon,
+            next: self.head.take(),
+        }));
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Polygon> {
+        std::iter::successors(self.head.as_deref(), |node| node.next.as_deref())
+            .map(|node| &node.polygon)
+    }
 }
 
 /// A clip bounded by straight-edged rings. PDFium does not report whether the
@@ -43,6 +87,11 @@ struct Polygon {
 /// Most vertices a polygon clip may have; a larger outline fails open rather
 /// than cost every glyph under it a long walk.
 const MAX_POLYGON_VERTICES: usize = 4096;
+
+/// Most polygon vertices one text object's clip stack may hold in total; past
+/// it polygon clipping is dropped for the object and the rectangle alone
+/// applies, so nested clips cannot grow cost with depth times outline size.
+const MAX_CLIP_VERTICES: usize = 16384;
 
 /// Combined form alpha below which painted text cannot be read: ink at under 5%
 /// is within a few grey levels of the paper. Revit exports hide duplicate
@@ -107,7 +156,7 @@ impl TextClip {
         for path in paths {
             let shape = bounds.get_or_insert_with(|| ClipShape {
                 rect: None,
-                polygons: Vec::new(),
+                polygons: PolygonList::default(),
             });
             if let Some(rect) = rectangle(&path, parent) {
                 shape.rect = Some(match shape.rect {
@@ -383,6 +432,10 @@ fn ring_area(ring: &[(f64, f64)]) -> f64 {
 }
 
 impl Polygon {
+    fn vertex_count(&self) -> usize {
+        self.rings.iter().map(Vec::len).sum()
+    }
+
     fn edges(&self) -> impl Iterator<Item = ((f64, f64), (f64, f64))> + '_ {
         self.rings.iter().flat_map(|ring| {
             ring.iter()

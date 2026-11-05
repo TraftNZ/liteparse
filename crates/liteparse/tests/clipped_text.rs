@@ -146,6 +146,56 @@ fn text_outside_a_polygon_clip_is_hidden_and_text_inside_is_kept() {
     assert_text(&pdf(content, &[], 0), "INSIDE");
 }
 
+/// A chain of forms, each clipping through its own triangle-like polygon of
+/// hundreds of vertices before drawing the next, the last drawing the text.
+fn nested_polygon_forms(depth: usize) -> Vec<String> {
+    const POINTS: usize = 450;
+    const STEP: f64 = 0.5;
+    const BASE: f64 = 500.0;
+    const FIRST_FORM_OBJECT: usize = 6;
+    (0..depth)
+        .map(|level| {
+            let side = BASE - level as f64 * 0.25;
+            let mut content = format!("0 0 m {side} 0 l ");
+            for i in 0..POINTS {
+                let t = i as f64 * STEP;
+                content.push_str(&format!("{} {} l ", side - t, t));
+            }
+            content.push_str("h W* n ");
+            if level + 1 == depth {
+                content.push_str(
+                    "BT /F1 10 Tf 20 20 Td (INSIDE) Tj ET BT /F1 10 Tf 400 400 Td (OUTSIDE) Tj ET",
+                );
+            } else {
+                content.push_str("/Next Do");
+            }
+            stream(
+                &format!(
+                    "/Type /XObject /Subtype /Form /BBox [0 0 600 800] /Resources << /Font << /F1 4 0 R >> /XObject << /Next {} 0 R >> >>",
+                    FIRST_FORM_OBJECT + level + 1
+                ),
+                &content,
+            )
+        })
+        .collect()
+}
+
+fn assert_nested_polygon_forms(depth: usize, expected: &str) {
+    let forms = nested_polygon_forms(depth);
+    let forms: Vec<&str> = forms.iter().map(String::as_str).collect();
+    assert_text(&pdf("/Outer Do", &forms, 0), expected);
+}
+
+#[test]
+fn nested_polygon_clips_within_budget_still_hide_outside_text() {
+    assert_nested_polygon_forms(5, "INSIDE");
+}
+
+#[test]
+fn nested_polygon_clips_past_the_vertex_budget_fail_open_and_keep_text() {
+    assert_nested_polygon_forms(40, "INSIDEOUTSIDE");
+}
+
 #[test]
 fn text_in_the_notch_of_a_concave_polygon_clip_is_hidden() {
     // An L: the square 100..200 square is the notch, outside the outline.

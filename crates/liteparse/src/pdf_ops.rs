@@ -5,7 +5,6 @@ use std::io::{self, Read};
 
 use base64::Engine as _;
 use image::{DynamicImage, ImageFormat, RgbImage, RgbaImage};
-use lopdf::{Document as SourceDocument, Object};
 use pdfium::{
     Bitmap, BitmapFormat, Library, Matrix, Page, PageObject, PageObjectKind, RectF, TextPage,
 };
@@ -321,68 +320,6 @@ fn bitmap_rgba(bitmap: &Bitmap<'_>) -> Result<RgbaImage, io::Error> {
         .ok_or_else(|| invalid("invalid embedded image bitmap"))
 }
 
-fn image_soft_mask<'a>(
-    source_doc: &'a SourceDocument,
-    raw: &[u8],
-) -> Result<Option<&'a lopdf::Stream>, Box<dyn Error>> {
-    let mut matched = false;
-    let mut mask_ref = None;
-    for object in source_doc.objects.values() {
-        let Object::Stream(stream) = object else {
-            continue;
-        };
-        if stream.dict.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Image")
-            || stream.content != raw
-        {
-            continue;
-        }
-        let candidate = stream
-            .dict
-            .get(b"SMask")
-            .ok()
-            .and_then(|value| value.as_reference().ok());
-        if matched && candidate != mask_ref {
-            return Err(invalid("identical image streams have different soft masks").into());
-        }
-        matched = true;
-        mask_ref = candidate;
-    }
-    if !matched {
-        return Err(invalid("source image could not be matched to its PDF image stream").into());
-    }
-    let Some(mask_ref) = mask_ref else {
-        return Ok(None);
-    };
-    let mask = source_doc.get_object(mask_ref)?.as_stream()?;
-    Ok(Some(mask))
-}
-
-fn apply_soft_mask(pixels: &mut RgbaImage, mask: &lopdf::Stream) -> Result<(), Box<dyn Error>> {
-    let width = mask.dict.get(b"Width")?.as_i64()?;
-    let height = mask.dict.get(b"Height")?.as_i64()?;
-    let depth = mask.dict.get(b"BitsPerComponent")?.as_i64()?;
-    if width != pixels.width() as i64 || height != pixels.height() as i64 || depth != 8 {
-        return Err(invalid("soft mask dimensions or bit depth differ from source image").into());
-    }
-    let alpha = if mask.dict.has(b"Filter") {
-        mask.decompressed_content()?
-    } else {
-        mask.content.clone()
-    };
-    if alpha.len() != pixels.width() as usize * pixels.height() as usize {
-        return Err(invalid("soft mask decoded size does not match source image").into());
-    }
-    for (pixel, value) in pixels.pixels_mut().zip(alpha) {
-        pixel[3] = value;
-        if value == 0 {
-            pixel[0] = 0;
-            pixel[1] = 0;
-            pixel[2] = 0;
-        }
-    }
-    Ok(())
-}
-
 fn identity_matrix() -> Matrix {
     Matrix {
         a: 1.0,
@@ -434,7 +371,6 @@ fn collect_images(
     page: &Page<'_, '_>,
     source: PageObject<'_, '_>,
     parent: Matrix,
-    source_doc: &SourceDocument,
     page_number: u32,
     view_box: &RectF,
     page_width: f64,
@@ -458,7 +394,6 @@ fn collect_images(
                     page,
                     child,
                     transform,
-                    source_doc,
                     page_number,
                     view_box,
                     page_width,
@@ -473,18 +408,13 @@ fn collect_images(
                 .ok_or_else(|| invalid("image bounds unavailable"))?;
             let page_bounds = transform_rect(bounds, parent);
             let viewport = page.bounds_to_viewport(view_box, &page_bounds);
+            // PDFium paints the image with its mask at the stored pixel size, so a
+            // soft mask of any bit depth, filter or size reaches the alpha channel.
             let bitmap = source
-                .image_bitmap()
+                .image_rendered_native()
                 .ok_or_else(|| invalid("image source bitmap unavailable"))?;
-            let mut pixels = bitmap_rgba(&bitmap)?;
-            let raw = source
-                .image_data_raw()
-                .ok_or_else(|| invalid("source image data unavailable"))?;
-            let soft_mask = image_soft_mask(source_doc, &raw)?;
-            if let Some(mask) = soft_mask {
-                apply_soft_mask(&mut pixels, mask)?;
-            }
-            let has_alpha = soft_mask.is_some() || pixels.pixels().any(|pixel| pixel[3] != 255);
+            let pixels = bitmap_rgba(&bitmap)?;
+            let has_alpha = pixels.pixels().any(|pixel| pixel[3] != u8::MAX);
             let mut bytes = std::io::Cursor::new(Vec::new());
             DynamicImage::ImageRgba8(pixels).write_to(&mut bytes, ImageFormat::Png)?;
             images.push(PageImage {
@@ -507,7 +437,6 @@ fn collect_images(
 fn embedded_images(
     page: &Page<'_, '_>,
     page_number: u32,
-    source_doc: &SourceDocument,
 ) -> Result<Vec<PageImage>, Box<dyn Error>> {
     let (page_width, page_height) = page_size(page)?;
     let view_box = page
@@ -522,7 +451,6 @@ fn embedded_images(
             page,
             object,
             identity_matrix(),
-            source_doc,
             page_number,
             &view_box,
             page_width,
@@ -725,8 +653,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         PdfOperation::ExtractImages => {
             let number = page_number(&request, total_pages)?;
             let page = document.page(number as i32 - 1)?;
-            let source_doc = SourceDocument::load(&request.pdf_path)?;
-            response.images = Some(embedded_images(&page, number, &source_doc)?);
+            response.images = Some(embedded_images(&page, number)?);
         }
     }
     println!("{}", serde_json::to_string(&response)?);
@@ -736,27 +663,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lopdf::dictionary;
-
-    #[test]
-    fn rejects_invalid_soft_mask_filters() {
-        const WIDTH: u32 = 2;
-        const HEIGHT: u32 = 2;
-        const BITS_PER_COMPONENT: i64 = 8;
-        const INVALID_FILTER: i64 = 7;
-        const ALPHA_SAMPLES: [u8; 4] = [0, 85, 170, 255];
-        let mask = lopdf::Stream::new(
-            dictionary! {
-                "Width" => i64::from(WIDTH),
-                "Height" => i64::from(HEIGHT),
-                "BitsPerComponent" => BITS_PER_COMPONENT,
-                "Filter" => INVALID_FILTER,
-            },
-            ALPHA_SAMPLES.to_vec(),
-        );
-        let mut pixels = RgbaImage::new(WIDTH, HEIGHT);
-        assert!(apply_soft_mask(&mut pixels, &mask).is_err());
-    }
 
     #[test]
     fn rejects_invalid_fraction_rectangles() {
@@ -804,5 +710,146 @@ mod tests {
         native_clip(&page, CLIP_DPI, CLIP_RECT).unwrap();
         let after = full_render(&page, BASELINE_DPI).unwrap();
         assert_eq!(before.as_raw(), after.as_raw());
+    }
+
+    fn decoded_png(image: &PageImage) -> RgbaImage {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&image.data)
+            .unwrap();
+        image::load_from_memory(&bytes).unwrap().to_rgba8()
+    }
+
+    #[test]
+    fn extracts_ccitt_one_bit_soft_mask_as_alpha() {
+        // A 64x32 image whose SMask is a 1-bit CCITTFax mask (as MuPDF writes a
+        // binary alpha): opaque where the logo rectangle is, transparent around it.
+        const WIDTH: u32 = 64;
+        const HEIGHT: u32 = 32;
+        const ARTWORK: (u32, u32) = (30, 16);
+        let library = Library::try_init().unwrap();
+        let fixture = format!(
+            "{}/tests/fixtures/ccitt_soft_mask.pdf",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let document = library.load_document(&fixture, None).unwrap();
+        let page = document.page(0).unwrap();
+        let images = embedded_images(&page, 1).unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].has_alpha, Some(true));
+        let pixels = decoded_png(&images[0]);
+        assert_eq!(pixels.dimensions(), (WIDTH, HEIGHT));
+        assert_eq!(pixels.get_pixel(0, 0)[3], 0);
+        let artwork = pixels.get_pixel(ARTWORK.0, ARTWORK.1);
+        assert_eq!(artwork[3], u8::MAX);
+        assert!(artwork[0] > artwork[1] && artwork[0] > artwork[2]);
+    }
+
+    /// A one-page PDF with a 4x4 red image under a 2x2 8-bit soft mask placed
+    /// with a rotated matrix, and a 2x2 opaque image with no mask.
+    fn mismatched_mask_pdf(path: &std::path::Path) {
+        use lopdf::{Document, Object, Stream, dictionary};
+        const IMAGE_SIDE: i64 = 4;
+        const MASK_SIDE: i64 = 2;
+        const OPAQUE_SIDE: i64 = 2;
+        const RED: [u8; 3] = [255, 0, 0];
+        const OPAQUE_SAMPLES: [u8; 12] = [0, 0, 255, 0, 255, 0, 255, 255, 0, 0, 0, 0];
+        const MASK_SAMPLES: [u8; 4] = [0, 255, 255, 0];
+        let mut doc = Document::with_version("1.5");
+        let mask = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => MASK_SIDE, "Height" => MASK_SIDE,
+                "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+            },
+            MASK_SAMPLES.to_vec(),
+        ));
+        let red: Vec<u8> = (0..IMAGE_SIDE * IMAGE_SIDE).flat_map(|_| RED).collect();
+        let masked = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => IMAGE_SIDE, "Height" => IMAGE_SIDE,
+                "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8,
+                "SMask" => mask,
+            },
+            red,
+        ));
+        let opaque = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image",
+                "Width" => OPAQUE_SIDE, "Height" => OPAQUE_SIDE,
+                "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8,
+            },
+            OPAQUE_SAMPLES.to_vec(),
+        ));
+        let content = doc.add_object(Stream::new(
+            dictionary! {},
+            b"q 0 40 -40 0 100 20 cm /Im1 Do Q q 40 0 0 40 120 20 cm /Im2 Do Q".to_vec(),
+        ));
+        let pages = doc.new_object_id();
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 200.into(), 100.into()],
+            "Contents" => content,
+            "Resources" => dictionary! {
+                "XObject" => dictionary! { "Im1" => masked, "Im2" => opaque },
+            },
+        });
+        doc.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1,
+            }),
+        );
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        doc.trailer.set("Root", catalog);
+        doc.save(path).unwrap();
+    }
+
+    #[test]
+    fn resamples_a_smaller_soft_mask_and_keeps_object_matrices() {
+        const IMAGE_SIDE: u32 = 4;
+        const OPAQUE_SIDE: u32 = 2;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mismatched_mask.pdf");
+        mismatched_mask_pdf(&path);
+        let library = Library::try_init().unwrap();
+        let document = library.load_document(path.to_str().unwrap(), None).unwrap();
+        let page = document.page(0).unwrap();
+        let matrices_before: Vec<_> = (0..page.object_count())
+            .map(|index| {
+                let m = page.object(index).unwrap().matrix().unwrap();
+                [m.a, m.b, m.c, m.d, m.e, m.f]
+            })
+            .collect();
+        let rendered_before = full_render(&page, POINTS_PER_INCH as u32).unwrap();
+
+        let images = embedded_images(&page, 1).unwrap();
+        assert_eq!(images.len(), 2);
+
+        let masked = decoded_png(&images[0]);
+        assert_eq!(images[0].has_alpha, Some(true));
+        assert_eq!(masked.dimensions(), (IMAGE_SIDE, IMAGE_SIDE));
+        let last = IMAGE_SIDE - 1;
+        assert_eq!(masked.get_pixel(0, 0)[3], 0);
+        assert_eq!(masked.get_pixel(last, 0)[3], u8::MAX);
+        assert_eq!(masked.get_pixel(0, last)[3], u8::MAX);
+        assert_eq!(masked.get_pixel(last, last)[3], 0);
+        assert_eq!(masked.get_pixel(last, 0).0, [u8::MAX, 0, 0, u8::MAX]);
+
+        let opaque = decoded_png(&images[1]);
+        assert_eq!(images[1].has_alpha, Some(false));
+        assert_eq!(opaque.dimensions(), (OPAQUE_SIDE, OPAQUE_SIDE));
+        let source = page.object(1).unwrap().image_bitmap().unwrap();
+        assert_eq!(opaque.as_raw(), bitmap_rgba(&source).unwrap().as_raw());
+
+        let matrices_after: Vec<_> = (0..page.object_count())
+            .map(|index| {
+                let m = page.object(index).unwrap().matrix().unwrap();
+                [m.a, m.b, m.c, m.d, m.e, m.f]
+            })
+            .collect();
+        assert_eq!(matrices_before, matrices_after);
+        let rendered_after = full_render(&page, POINTS_PER_INCH as u32).unwrap();
+        assert_eq!(rendered_before.as_raw(), rendered_after.as_raw());
     }
 }

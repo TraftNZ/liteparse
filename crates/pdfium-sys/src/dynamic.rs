@@ -205,6 +205,7 @@ pub struct PdfiumBindings {
         ) -> FPDF_PATHSEGMENT,
     >,
     pub FPDFPageObj_GetMatrix: unsafe extern "C" fn(FPDF_PAGEOBJECT, *mut FS_MATRIX) -> FPDF_BOOL,
+    pub FPDFPageObj_SetMatrix: unsafe extern "C" fn(FPDF_PAGEOBJECT, *const FS_MATRIX) -> FPDF_BOOL,
     pub FPDFPageObj_GetStrokeColor: unsafe extern "C" fn(
         FPDF_PAGEOBJECT,
         *mut std::os::raw::c_uint,
@@ -664,6 +665,7 @@ impl PdfiumBindings {
             FPDFClipPath_CountPathSegments: load_fn_opt!(lib, "FPDFClipPath_CountPathSegments"),
             FPDFClipPath_GetPathSegment: load_fn_opt!(lib, "FPDFClipPath_GetPathSegment"),
             FPDFPageObj_GetMatrix: load_fn!(lib, "FPDFPageObj_GetMatrix"),
+            FPDFPageObj_SetMatrix: load_fn!(lib, "FPDFPageObj_SetMatrix"),
             FPDFPageObj_GetStrokeColor: load_fn!(lib, "FPDFPageObj_GetStrokeColor"),
             FPDFPageObj_GetFillColor: load_fn!(lib, "FPDFPageObj_GetFillColor"),
             FPDFPageObj_GetStrokeWidth: load_fn!(lib, "FPDFPageObj_GetStrokeWidth"),

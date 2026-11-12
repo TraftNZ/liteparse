@@ -78,6 +78,7 @@ pub struct ImageMetadata {
 pub struct PageObject<'page, 'lib> {
     handle: pdfium_sys::FPDF_PAGEOBJECT,
     page: pdfium_sys::FPDF_PAGE,
+    document: pdfium_sys::FPDF_DOCUMENT,
     _page: PhantomData<&'page ()>,
     _lib: PhantomData<&'lib Library>,
 }
@@ -96,6 +97,7 @@ impl<'doc, 'lib: 'doc> Page<'doc, 'lib> {
         (!handle.is_null()).then_some(PageObject {
             handle,
             page: self.handle,
+            document: self.doc_handle,
             _page: PhantomData,
             _lib: PhantomData,
         })
@@ -262,6 +264,7 @@ impl<'page, 'lib> PageObject<'page, 'lib> {
         (!handle.is_null()).then_some(PageObject {
             handle,
             page: self.page,
+            document: self.document,
             _page: PhantomData,
             _lib: PhantomData,
         })
@@ -418,6 +421,68 @@ impl<'page, 'lib> PageObject<'page, 'lib> {
         }
         // SAFETY: a freshly created bitmap we own; `'lib` is the page's lock lifetime.
         Some(unsafe { Bitmap::from_handle(handle) })
+    }
+
+    /// The image as pdfium paints it, at its stored pixel size: a BGRA bitmap whose
+    /// alpha carries the image's soft mask, explicit mask or colour-key mask, decoded
+    /// through pdfium's own filters (CCITTFax, JBIG2, JPX, DCT, …), bit depths,
+    /// `/Decode` and `/Matte`, with a mask of another size resampled to the image.
+    ///
+    /// `FPDFImageObj_GetRenderedBitmap` paints through the object's matrix, sized by
+    /// its `a`/`d` scale, so the matrix is set to the pixel size (unrotated, unit
+    /// scale per pixel) for the render and restored afterwards. `None` for
+    /// non-images or when pdfium cannot render.
+    pub fn image_rendered_native(&self) -> Option<Bitmap<'lib>> {
+        let mut width: std::os::raw::c_uint = 0;
+        let mut height: std::os::raw::c_uint = 0;
+        let sized = unsafe {
+            ffi!(FPDFImageObj_GetImagePixelSize(
+                self.handle,
+                &mut width,
+                &mut height
+            ))
+        };
+        if sized == 0 || width == 0 || height == 0 {
+            return None;
+        }
+        let mut original = pdfium_sys::FS_MATRIX {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        };
+        if unsafe { ffi!(FPDFPageObj_GetMatrix(self.handle, &mut original)) } == 0 {
+            return None;
+        }
+        let native = pdfium_sys::FS_MATRIX {
+            a: width as f32,
+            b: 0.0,
+            c: 0.0,
+            d: height as f32,
+            e: 0.0,
+            f: 0.0,
+        };
+        if unsafe { ffi!(FPDFPageObj_SetMatrix(self.handle, &native)) } == 0 {
+            return None;
+        }
+        let handle = unsafe {
+            ffi!(FPDFImageObj_GetRenderedBitmap(
+                self.document,
+                self.page,
+                self.handle
+            ))
+        };
+        // Restore before anything else reads the object; the matrix round-trips
+        // exactly because it is stored as the same six floats.
+        let restored = unsafe { ffi!(FPDFPageObj_SetMatrix(self.handle, &original)) } != 0;
+        if handle.is_null() {
+            return None;
+        }
+        // SAFETY: a freshly created bitmap we own; `'lib` is the page's lock lifetime.
+        let bitmap = unsafe { Bitmap::from_handle(handle) };
+        restored.then_some(bitmap)
     }
 }
 
